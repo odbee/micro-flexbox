@@ -1,0 +1,15 @@
+{
+    "files.associations": {
+        "string.h": "c",
+        "renderer.h": "c",
+        "stdio.h": "c",
+        "array": "cpp",
+        "type_traits": "cpp",
+        "xtr1common": "cpp",
+        "xutility": "cpp",
+        "begin_code.h": "c",
+        "close_code.h": "c",
+        "typeinfo": "c",
+        "stdlib.h": "c"
+    }
+}
