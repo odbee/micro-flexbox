@@ -21,97 +21,51 @@ unsigned int leftbarwidth=100;
 unsigned int rightbarwidth=100;
 
 
-static void title_bar(mu_Context *ctx) {
-
-     if (mu_begin_window_ex(ctx, "Title Bar", mu_rect(0, 0, width, topbarheight),MU_OPT_NOTITLE| MU_OPT_NOTITLE)) {
-         mu_layout_row(ctx,
-                       5,
-                       (const int[]){ 100, 100, 100, 100, 100 },
-                       -1);
-         mu_textelem(ctx, "REC");
-         mu_textelem(ctx, "00:00:00:00");
-         mu_textelem(ctx, "4K 24fps");
-         mu_textelem(ctx, "ProRes 422");
+static void layout(mu_Context *ctx) {
+  if (mu_begin_elem_window_ex(ctx,"MAIN LAYOUT",mu_rect(0,0,800,480),MU_OPT_NOTITLE|MU_OPT_NORESIZE|MU_OPT_NOFRAME)){
 
 
-         mu_end_window(ctx);
 
-     }
-}
-static void leftbar(mu_Context *ctx) {
-     if (mu_begin_window_ex(ctx, "Left Bar", mu_rect(0, topbarheight, rightbarwidth, height-topbarheight-botbarheight), MU_OPT_NOTITLE|MU_OPT_NORESIZE|MU_OPT_NOSCROLL|MU_OPT_ALIGNCENTER)) {
-        mu_layout_row_ex(ctx,3, NULL,20,DIR_X);
-//      mu_flexbox(ctx,ydir);
-        mu_button(ctx,"ISO");
-        
-        mu_button(ctx,"APERTURE");
-        mu_button(ctx,"SHUTTER");
-        mu_button(ctx,"WHITE BALANCE");
-        
-        mu_end_window(ctx);
-        
+    mu_begin_elem(ctx,0,30);
+    mu_end_elem(ctx);
+    
+    mu_begin_elem_ex(ctx,1,0,DIR_X,(mu_Alignment)(MU_ALIGN_BOTTOM|MU_ALIGN_LEFT));
 
-     }
-}
-
-static void rightbar(mu_Context *ctx) {
-     if (mu_begin_window_ex(ctx, "Right Bar", mu_rect(width-rightbarwidth, topbarheight,rightbarwidth, height-topbarheight-botbarheight), MU_OPT_NOTITLE|MU_OPT_NORESIZE)) {
-        mu_begin_elem_ex(ctx,800,480,DIR_Y,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_LEFT));
-
-          mu_begin_elem(ctx,1,20);
-          mu_end_elem(ctx);
-          
-          mu_begin_elem_ex(ctx,1,0,DIR_X,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_LEFT));
-            mu_begin_elem_ex(ctx,40,300,DIR_Y,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_LEFT));
-            mu_end_elem(ctx); 
-            mu_begin_elem_ex(ctx,0,300,DIR_Y,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_LEFT));
-            mu_end_elem(ctx); 
-            mu_begin_elem_ex(ctx,40,1,DIR_Y,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_LEFT));
-            mu_end_elem(ctx); 
-          mu_end_elem(ctx);
-
-          mu_begin_elem(ctx,1,20);
-          mu_end_elem(ctx);
+      mu_begin_elem_ex(ctx,90,1,DIR_Y,(mu_Alignment)(MU_ALIGN_MIDDLE|MU_ALIGN_CENTER));
+        mu_begin_elem_ex(ctx,0.9,50,DIR_Y,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_LEFT));
         mu_end_elem(ctx);
+        mu_begin_elem_ex(ctx,0.9,50,DIR_Y,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_LEFT));
+        mu_end_elem(ctx);  
+        mu_begin_elem_ex(ctx,0.9,50,DIR_Y,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_LEFT));
+        mu_end_elem(ctx);  
+        mu_begin_elem_ex(ctx,0.9,50,DIR_Y,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_LEFT));
+        mu_end_elem(ctx);  
+      mu_end_elem(ctx);
 
-        mu_adjust_size(ctx,&ctx->element_stack.items[0]);
-        
-        mu_apply_size(ctx);
 
-        mu_adjust_elem_positions(ctx);
-        
-        mu_draw_debug_elems(ctx);
-        // mu_print_debug_tree(ctx);
+      mu_begin_elem_ex(ctx,0,0,DIR_Y,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_LEFT));
+      mu_end_elem(ctx); 
 
-        // mu_draw_debug_outline_ex(ctx, (mu_Rect){40,40,40,40}, (mu_Color){100,190,0,255}, 3);
+      mu_begin_elem_ex(ctx,90,1,DIR_Y,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_LEFT));
 
-         mu_end_window(ctx);
+      mu_end_elem(ctx); 
 
-     }
+    mu_end_elem(ctx);
+
+    mu_begin_elem(ctx,0,20);
+    mu_end_elem(ctx);
+
+  mu_end_elem_window(ctx);
+  }
 }
-
-static void bottombar(mu_Context *ctx) {
-     if (mu_begin_window_ex(ctx, "Bottom Bar", mu_rect(0, height-botbarheight, width, botbarheight), MU_OPT_NOTITLE|MU_OPT_NORESIZE)) {
-         mu_end_window(ctx);
-
-     }
-}
-
-static void background(mu_Context *ctx) {
-     if (mu_begin_window_ex(ctx, "Backgroundframe", mu_rect(0,0, width, height), MU_OPT_NOTITLE|MU_OPT_NORESIZE|MU_OPT_NOFRAME)) {
-         mu_draw_point(ctx, ctx->mouse_pos, (mu_Color){ 230, 230, 230, 255 } );
-         mu_end_window(ctx);
-     }
-}
-
 
 
 
 static void process_frame(mu_Context *ctx) {
   mu_begin(ctx);
 //   background(ctx);
-  // leftbar(ctx);
-  rightbar(ctx);
+  // rightbar(ctx);
+  layout(ctx);
 //   title_bar(ctx);
 //   bottombar(ctx);
   mu_end(ctx);

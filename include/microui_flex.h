@@ -209,10 +209,8 @@ typedef struct {
   int padding;
   mu_Dir direction;
   mu_fVec2 sizing; // 0 to 1 values are for percent. 1 to n values are for fixed, 0 is for grow,-1 is for fit.
-
   mu_Vec2 min; // minimum size for box
   mu_Rect rect;
-
   mu_Tree tree;
   mu_Text text;
   int leftoversize;
@@ -388,13 +386,13 @@ void mu_layout_row(mu_Context *ctx, int items, const int *widths, int height);
 // FLEX  FUNCTIONS
 void mu_begin_elem_ex(mu_Context *ctx, float sizex, float sizey, mu_Dir direction,mu_Alignment alignopts);
 void mu_end_elem(mu_Context *ctx);
-void mu_sort_elems(mu_Context *ctx);
-
-void mu_adjust_size(mu_Context *ctx,mu_Elem* elem);
+void mu_resize(mu_Context *ctx);
 void mu_apply_size(mu_Context *ctx);
 void mu_adjust_elem_positions(mu_Context *ctx);
 void mu_draw_debug_elems(mu_Context *ctx);
 void mu_print_debug_tree(mu_Context *ctx);
+int mu_begin_elem_window_ex(mu_Context *ctx, const char *title, mu_Rect rect, int opt);
+void mu_end_elem_window(mu_Context *ctx);
 #ifdef __cplusplus
 }
 #endif

@@ -476,13 +476,6 @@ static mu_Layout* get_layout(mu_Context *ctx) {
 }
 
 
-static mu_Elem* get_element(mu_Context *ctx) {
-  return &ctx->element_stack.items[ctx->element_stack.idx - 1];
-}
-static mu_Elem* get_element_by_idx(mu_Context *ctx,int idx) {
-  return &ctx->element_stack.items[idx];
-}
-
 
 
 /// @brief Finalizes and ends the scope of the current container.
@@ -1678,68 +1671,60 @@ void mu_end_elem(mu_Context *ctx) {
 
 
 
-static inline void handle_size(float *size, int parent_size,int padding) {
-  if (*size == -1) {
-    printf("num is -1, handle fit\n");
-  } else if (*size == 0) {
-    // if (direction==DIR_X){
-    //   *size=parent_size;
-    // }
-    
-      // printf("num is 0, handle grow\n");
-  } else if (*size > 1) {
-      *size = (int)(*size);
-  } else if (*size <= 1) {
-      *size = (int)(*size * parent_size)-padding;
-  } else {
-      __builtin_unreachable();
-  }
-}
-
-void mu_adjust_size(mu_Context *ctx,mu_Elem* elem){
-  //TODO AT THE START OF ADJUSTING A SIZE THE PARENT ISNT DONE SETUP YET THEREFORE IT DOESNT HAVE A SIZE IF ITS SIZE IS RELYING ON OTHER FACTORS
-  //ALTERNATIVE: DO A BFS. AND SORT BY THAT. OR KEEP TRACK OF ELEMENENTS IN EVERY TIER. AND FOLLOW THAT TO GET
-  //ALTERNATIVE: 
-    mu_Elem* parent=&ctx->element_stack.items[elem->tree.parent];
-    handle_size(&elem->sizing.x,parent->sizing.x,2*parent->padding);
-    handle_size(&elem->sizing.y,parent->sizing.y,2*parent->padding);
-    if (parent->direction==DIR_X&&elem->sizing.y==0) elem->sizing.y=parent->sizing.y-2*parent->padding;
-    if (parent->direction==DIR_Y&&elem->sizing.x==0) elem->sizing.x=parent->sizing.x-2*parent->padding;
-
+void mu_resize_children(mu_Context *ctx,mu_Elem* elem) {
+  if (elem->tree.count){
     float totalChildSize = 0;
     int growChildren = 0;
     mu_Elem* listofgrowers[elem->tree.count];
-
     for (int i = 0; i < elem->tree.count; i++) {
-        mu_Elem* child = &ctx->element_stack.items[elem->tree.children[i]];
-        // Recursively calculate child size
-        mu_adjust_size(ctx, child);
-          // Track growing children and accumulate sizes
-        totalChildSize += child->sizing.x*((elem->direction +0)%2);
-        totalChildSize += child->sizing.y*((elem->direction +1)%2);
-        if(elem->direction==DIR_X){ // can also do with with child->sizing.x * child->sizing.y
-          if (child->sizing.x == 0.0f) listofgrowers[growChildren++]=child;
-        } else {
-          if (child->sizing.y == 0.0f) listofgrowers[growChildren++]=child;
-        }
+      mu_Elem* child = &ctx->element_stack.items[elem->tree.children[i]];
+
+      //HANDLE PERCENTAGE AND FIND GROWERS
+      if ((child->sizing.x==0&&elem->direction==DIR_X) || (child->sizing.y==0&&elem->direction==DIR_Y))
+        listofgrowers[growChildren++]=child;
+      // if sizing is set to grow across the weak axis we set it to 100%
+      if (elem->direction==DIR_X && child->sizing.y==0) 
+        child->sizing.y=1;
+      if (elem->direction==DIR_Y && child->sizing.x==0) 
+        child->sizing.x=1;
+      if (child->sizing.x <= 1&&child->sizing.x>0)
+      {
+        child->sizing.x = (child->sizing.x * elem->sizing.x); 
+        child->sizing.x -= 2*elem->padding;
+        child->sizing.x -= elem->gap*(elem->tree.count-1)*(elem->direction); //ONLY ADD GAPS TO THE ACTIVE AXIS
+      }
+      if (child->sizing.y <= 1&&child->sizing.y>0){
+        child->sizing.y = (child->sizing.y * elem->sizing.y);
+        child->sizing.y -= 2*elem->padding;
+        child->sizing.y -= elem->gap*(elem->tree.count-1)*((elem->direction+1)%2);//ONLY ADD GAPS TO THE ACTIVE AXIS
+      }
+      totalChildSize += child->sizing.x*((elem->direction +0)%2);
+      totalChildSize += child->sizing.y*((elem->direction +1)%2);
     }
-    for (int i =0;i<growChildren;i++){
+    elem->leftoversize=totalChildSize;
+        for (int i =0;i<growChildren;i++){
         mu_Elem* child = listofgrowers[i];
         //TODO STILL HAVE TO CHECK IF MIN SIZE IS BIGGER THAN GROW SIZE
-        child->sizing.x+=((elem->sizing.x - totalChildSize)/growChildren-elem->gap*(elem->tree.count-1)-elem->padding*2 )*((elem->direction +0)%2);
+        child->sizing.x+=((elem->sizing.x - totalChildSize)/growChildren-elem->gap*(elem->tree.count-1)-elem->padding*2 )*(elem->direction);
         child->sizing.y+=((elem->sizing.y - totalChildSize)/growChildren-elem->gap*(elem->tree.count-1)-elem->padding*2 )*((elem->direction +1)%2);
     }
-    if (!growChildren){
-      elem->leftoversize=totalChildSize;
-
-    }
+  } 
 }
+
+void mu_resize(mu_Context *ctx) {
+  for (int i = 0; i < ctx->element_stack.idx; i++)
+  {
+    mu_resize_children(ctx, &ctx->element_stack.items[i]);
+  }
+  
+}
+
 
 void mu_apply_size(mu_Context *ctx)
 {
   for (int i = 0; i < ctx->element_stack.idx; i++)
   {
-    mu_Elem*elem=get_element_by_idx(ctx,i);
+    mu_Elem*elem=&ctx->element_stack.items[i];
     if (elem->sizing.x>1){
       elem->rect.w=(int)elem->sizing.x;
     }
@@ -1770,11 +1755,19 @@ void mu_adjust_children_positions(mu_Context *ctx,mu_Elem* elem){
       child->rect.x += elem->padding;
       child->rect.y += elem->padding;
       if (elem->direction==DIR_X){
-        child->rect.x +=(elem->rect.w-elem->leftoversize-elem->padding*6)* m.x;
-        child->rect.y +=(elem->rect.h-child->rect.h-elem->padding*2)*m.y;
+        child->rect.x +=(elem->rect.w-elem->leftoversize)* m.x;
+        child->rect.x -=(2*elem->padding+(elem->tree.count-1)*elem->gap)*m.x;
+        child->rect.y +=(elem->rect.h-child->rect.h)*m.y;
+        child->rect.y -=(2*elem->padding)*m.y;
+
+
       } else {
-        child->rect.x +=(elem->rect.w-child->rect.w)*m.x;        
+        child->rect.x +=(elem->rect.w-child->rect.w)*m.x;  
+        child->rect.x -=2*elem->padding*m.x;
+
         child->rect.y +=(elem->rect.h-elem->leftoversize)* m.y;
+        child->rect.y -=(2*elem->padding+(elem->tree.count-1)*elem->gap)*m.y;
+
       }
       child->rect.x += compoundx;
       child->rect.y += compoundy;
@@ -1788,14 +1781,14 @@ void mu_adjust_children_positions(mu_Context *ctx,mu_Elem* elem){
 
 void mu_adjust_elem_positions(mu_Context *ctx)
 {
-  mu_adjust_children_positions(ctx,get_element_by_idx(ctx,0));
+  mu_adjust_children_positions(ctx,&ctx->element_stack.items[0]);
   
 }
 
 void mu_draw_debug_elems(mu_Context *ctx){
   for (int i = 0; i < ctx->element_stack.idx; i++)
   {
-    mu_Elem*elem=get_element_by_idx(ctx,i);
+    mu_Elem*elem=&ctx->element_stack.items[i];
     
     mu_draw_debug_outline_ex(ctx, elem->rect, (mu_Color){100,190,0,255}, 3);
   }
@@ -1804,7 +1797,7 @@ void mu_draw_debug_elems(mu_Context *ctx){
 void mu_print_debug_tree(mu_Context *ctx){
     for (int i = 0; i < ctx->element_stack.idx; i++)
   {
-    mu_Elem*elem=get_element_by_idx(ctx,i);
+    mu_Elem*elem=&ctx->element_stack.items[i];
     
     printf("ELEMENT %03d: ID %02d, x %03d, y %03d,h %03d, w %03d,  tier %03d,  number of children %d, parent %d", i, elem->idx, elem->rect.x,elem->rect.y,elem->rect.h,elem->rect.w, elem->tier, elem->tree.count,elem->tree.parent);
     printf("chlidren: ");
@@ -2067,6 +2060,23 @@ int mu_begin_window_ex(mu_Context *ctx, const char *title, mu_Rect rect, int opt
   return MU_RES_ACTIVE;
 }
 
+int mu_begin_elem_window_ex(mu_Context *ctx, const char *title, mu_Rect rect, int opt) {
+  mu_Rect body;
+  mu_Id id = mu_get_id(ctx, title, strlen(title));
+  mu_Container *cnt = get_container(ctx, id, opt);
+  if (!cnt || !cnt->open) { return 0; }
+  push(ctx->id_stack, id);
+  if (cnt->rect.w == 0) { cnt->rect = rect; }
+  begin_root_container(ctx, cnt);
+  rect = body = cnt->rect;
+  push_container_body(ctx, cnt, body, opt);
+  mu_push_clip_rect(ctx, cnt->body);
+  mu_begin_elem_ex(ctx,cnt->rect.w,cnt->rect.h,DIR_Y,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_LEFT));
+
+  return MU_RES_ACTIVE;
+}
+
+
 /// @brief Ends the current window scope.
 /// @param ctx The MicroUI context.
 ///
@@ -2075,6 +2085,18 @@ int mu_begin_window_ex(mu_Context *ctx, const char *title, mu_Rect rect, int opt
 /// rectangle and calling the internal function to finalize the window's
 /// state and drawing order. It is crucial to call this function after
 /// `mu_begin_window_ex` to ensure correct UI behavior.
+
+void mu_end_elem_window(mu_Context *ctx) {
+  mu_end_elem(ctx);
+  mu_resize(ctx);
+  mu_apply_size(ctx);
+  mu_adjust_elem_positions(ctx);
+  mu_draw_debug_elems(ctx);
+
+  mu_pop_clip_rect(ctx);
+  end_root_container(ctx);
+}
+
 void mu_end_window(mu_Context *ctx) {
   mu_pop_clip_rect(ctx);
   end_root_container(ctx);
