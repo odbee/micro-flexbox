@@ -224,7 +224,7 @@ void mu_begin(mu_Context *ctx) {
   ctx->command_list.idx = 0;
   ctx->root_list.idx = 0;
   ctx->element_stack.idx=0;
-  ctx->current_parent=-1;
+  ctx->current_parent=NULL;
   ctx->scroll_target = NULL;
   ctx->hover_root = ctx->next_hover_root;
   ctx->next_hover_root = NULL;
@@ -1641,152 +1641,155 @@ void mu_end_treenode(mu_Context *ctx) {
 
 void mu_init_elem(mu_Elem*elem){
   elem->tree.count=0;
-  elem->tree.first_child=-1;
-  elem->tree.last_child=-1;
   elem->tree.parent=-1; 
-  elem->tree.next=-1; 
-  elem->tree.prev=-1;
-
 }
 
 void mu_begin_elem_ex(mu_Context *ctx, float sizex,float sizey, mu_Dir direction,mu_Alignment alignopts) {
-  int previndex=ctx->element_stack.idx-1;
   // push(ctx->element_stack,emptyelem); // THIS BREAKS THINGS
+
   int newindex=ctx->element_stack.idx++;
-  mu_init_elem(&ctx->element_stack.items[newindex]);
-  
   mu_Elem*new_elem=&ctx->element_stack.items[newindex];
-  mu_Elem*prev_elem=&ctx->element_stack.items[previndex];
-
+  mu_init_elem(new_elem);
   new_elem->idx=newindex; //set element id after we pushed it
-  new_elem->tier=ctx->tier;
-  ctx->tier++;
-
+  new_elem->tier=ctx->tier++;
   if (new_elem->tier!=0){
-
-      //check if we are a firstborn
-    if (new_elem->tier == prev_elem->tier) {
-    // if current element tier is the same as previous tier means we are siblings. else it means that we are a child
-    new_elem->tree.parent=prev_elem->tree.parent; // if we are siblings, inherit parent id from siblin
-    mu_Elem*parent_elem=&ctx->element_stack.items[prev_elem->tree.parent];
-    new_elem->tree.prev=previndex; //set previous element for element
-    prev_elem->tree.next=newindex; //set next element for previous element
-    parent_elem->tree.children[parent_elem->tree.count++]=newindex; // add new index to parent and increase count by 1
-    parent_elem->tree.last_child=newindex; //adjust last child for parent element
-    } else {
-      // if not then we are firstborn
-      // THIS IS BROKEN
-      new_elem->tree.parent=previndex; // inherent parent id for child
-      prev_elem->tree.children[prev_elem->tree.count++]=newindex;// add child to parent and increment count
-      prev_elem->tree.first_child=newindex; // get first child for parent
-      prev_elem->tree.last_child=newindex; // get last child for parent
-    }
+    new_elem->tree.parent= ctx->current_parent->idx;
+    ctx->current_parent->tree.children[ctx->current_parent->tree.count++]=new_elem->idx;
+  } {
+    ctx->current_parent=new_elem;
   }
-  
   // fill with standard values
   new_elem->childAlignment=alignopts;
   new_elem->gap=10;
   new_elem->padding=5;
   new_elem->direction=direction;
   new_elem->sizing=(mu_fVec2){sizex,sizey};
-
 }
 
 
 
 void mu_end_elem(mu_Context *ctx) {
-  // TODO ADD FIT ALGORITHM MAYBE?
+  // TODO ADD FIT ALGORITHM BY ADDING UP CHILDREN SIZES
   // pop(ctx->element_stack);
   ctx->tier--;
+  ctx->current_parent = &ctx->element_stack.items[ctx->current_parent->tree.parent];
+
 }
 
 
 
+static inline void handle_size(float *size, int parent_size,int padding) {
+  if (*size == -1) {
+    printf("num is -1, handle fit\n");
+  } else if (*size == 0) {
+    // if (direction==DIR_X){
+    //   *size=parent_size;
+    // }
+    
+      // printf("num is 0, handle grow\n");
+  } else if (*size > 1) {
+      *size = (int)(*size);
+  } else if (*size <= 1) {
+      *size = (int)(*size * parent_size)-padding;
+  } else {
+      __builtin_unreachable();
+  }
+}
 
-void sortByTier(mu_Context* ctx, int low, int high) {
-    if (low < high) {
-        // Partition inline
-        int i = low - 1;
-        int pivot = ctx->element_stack.items[high].tier;
+void mu_adjust_size(mu_Context *ctx,mu_Elem* elem){
+  //TODO AT THE START OF ADJUSTING A SIZE THE PARENT ISNT DONE SETUP YET THEREFORE IT DOESNT HAVE A SIZE IF ITS SIZE IS RELYING ON OTHER FACTORS
+  //ALTERNATIVE: DO A BFS. AND SORT BY THAT. OR KEEP TRACK OF ELEMENENTS IN EVERY TIER. AND FOLLOW THAT TO GET
+  //ALTERNATIVE: 
+    mu_Elem* parent=&ctx->element_stack.items[elem->tree.parent];
+    handle_size(&elem->sizing.x,parent->sizing.x,2*parent->padding);
+    handle_size(&elem->sizing.y,parent->sizing.y,2*parent->padding);
+    if (parent->direction==DIR_X&&elem->sizing.y==0) elem->sizing.y=parent->sizing.y-2*parent->padding;
+    if (parent->direction==DIR_Y&&elem->sizing.x==0) elem->sizing.x=parent->sizing.x-2*parent->padding;
 
-        for (int j = low; j < high; j++) {
-            if (ctx->element_stack.items[j].tier <= pivot) { // ascending
-                i++;
-                // Swap inline
-                mu_Elem temp = ctx->element_stack.items[i];
-                ctx->element_stack.items[i] = ctx->element_stack.items[j];
-                ctx->element_stack.items[j] = temp;
-            }
+    float totalChildSize = 0;
+    int growChildren = 0;
+    mu_Elem* listofgrowers[elem->tree.count];
+
+    for (int i = 0; i < elem->tree.count; i++) {
+        mu_Elem* child = &ctx->element_stack.items[elem->tree.children[i]];
+        // Recursively calculate child size
+        mu_adjust_size(ctx, child);
+          // Track growing children and accumulate sizes
+        totalChildSize += child->sizing.x*((elem->direction +0)%2);
+        totalChildSize += child->sizing.y*((elem->direction +1)%2);
+        if(elem->direction==DIR_X){ // can also do with with child->sizing.x * child->sizing.y
+          if (child->sizing.x == 0.0f) listofgrowers[growChildren++]=child;
+        } else {
+          if (child->sizing.y == 0.0f) listofgrowers[growChildren++]=child;
         }
-        // Swap pivot into correct position
-        mu_Elem temp = ctx->element_stack.items[i + 1];
-        ctx->element_stack.items[i + 1] = ctx->element_stack.items[high];
-        ctx->element_stack.items[high] = temp;
+    }
+    for (int i =0;i<growChildren;i++){
+        mu_Elem* child = listofgrowers[i];
+        //TODO STILL HAVE TO CHECK IF MIN SIZE IS BIGGER THAN GROW SIZE
+        child->sizing.x+=((elem->sizing.x - totalChildSize)/growChildren-elem->gap*(elem->tree.count-1)-elem->padding*2 )*((elem->direction +0)%2);
+        child->sizing.y+=((elem->sizing.y - totalChildSize)/growChildren-elem->gap*(elem->tree.count-1)-elem->padding*2 )*((elem->direction +1)%2);
+    }
+    if (!growChildren){
+      elem->leftoversize=totalChildSize;
 
-        int pi = i + 1;
-
-        // Recursively sort subarrays
-        sortByTier(ctx, low, pi - 1);
-        sortByTier(ctx, pi + 1, high);
     }
 }
 
-void print_tiers(mu_Context *ctx) {
-    printf("Element tiers after sorting:\n");
-    for (int i = 1; i <= ctx->element_stack.idx; i++) {
-        printf("%d ", ctx->element_stack.items[i].tier);
-    }
-    printf("\n");
-}
-
-void mu_calculate_size(mu_Context *ctx)
+void mu_apply_size(mu_Context *ctx)
 {
-
-  // if (ctx->element_stack.idx > 0) {
-  //   sortByTier(ctx, 0, ctx->element_stack.idx - 1);
-  // }
-
-  print_tiers(ctx); // <-- verify sorting
-
-  // sort_indices_by_tier(ctx,ctx->bfslist,ctx->element_stack.idx);
   for (int i = 0; i < ctx->element_stack.idx; i++)
   {
     mu_Elem*elem=get_element_by_idx(ctx,i);
     if (elem->sizing.x>1){
-      elem->rect.w=elem->sizing.x;
+      elem->rect.w=(int)elem->sizing.x;
     }
     if (elem->sizing.y>1){
-      elem->rect.h=elem->sizing.y;
+      elem->rect.h=(int)elem->sizing.y;
+    }
+  }
+}
+
+void mu_adjust_children_positions(mu_Context *ctx,mu_Elem* elem){
+  if (elem->tree.count>0){
+    mu_fVec2 m;
+    if (elem->childAlignment & MU_ALIGN_LEFT)   m.x = 0.0f;
+    if (elem->childAlignment & MU_ALIGN_CENTER) m.x = 0.5f;
+    if (elem->childAlignment & MU_ALIGN_RIGHT)  m.x = 1.0f;
+    if (elem->childAlignment & MU_ALIGN_TOP)    m.y = 0.0f;
+    if (elem->childAlignment & MU_ALIGN_MIDDLE) m.y = 0.5f;
+    if (elem->childAlignment & MU_ALIGN_BOTTOM) m.y = 1.0f;
+    // TODO FIX ALIGNS. BROKEN
+    mu_Elem* child;
+    int compoundx=0;
+    int compoundy=0;
+    // printf("result of childalign rightalign comparison: %s", elem->childAlignment&MU_ALIGN_RIGHT);
+    for (int i = 0; i < elem->tree.count; i++)  {
+      child  =  &ctx->element_stack.items[elem->tree.children[i]];
+      child->rect.x = elem->rect.x;
+      child->rect.y = elem->rect.y;
+      child->rect.x += elem->padding;
+      child->rect.y += elem->padding;
+      if (elem->direction==DIR_X){
+        child->rect.x +=(elem->rect.w-elem->leftoversize-elem->padding*6)* m.x;
+        child->rect.y +=(elem->rect.h-child->rect.h-elem->padding*2)*m.y;
+      } else {
+        child->rect.x +=(elem->rect.w-child->rect.w)*m.x;        
+        child->rect.y +=(elem->rect.h-elem->leftoversize)* m.y;
+      }
+      child->rect.x += compoundx;
+      child->rect.y += compoundy;
+      
+      compoundx     += (child->rect.w +elem->gap)*((elem->direction +0)%2);
+      compoundy     += (child->rect.h +elem->gap)*((elem->direction +1)%2);
+      mu_adjust_children_positions(ctx,child);
     }
   }
 }
 
 void mu_adjust_elem_positions(mu_Context *ctx)
 {
-  for (int i = 0; i < ctx->element_stack.idx; i++)
-  {
-    mu_Elem*elem=get_element_by_idx(ctx,i);
-
-    if (i==get_element_by_idx(ctx,elem->tree.parent)->tree.first_child){
-      elem->rect.x=get_element_by_idx(ctx,elem->tree.parent)->rect.x;
-      elem->rect.x+=get_element_by_idx(ctx,elem->tree.parent)->padding;
-
-      elem->rect.y=get_element_by_idx(ctx,elem->tree.parent)->rect.y;
-      elem->rect.y+=get_element_by_idx(ctx,elem->tree.parent)->padding;
-    } else {
-      elem->rect.x=get_element_by_idx(ctx,elem->tree.prev)->rect.x;
-      elem->rect.y=get_element_by_idx(ctx,elem->tree.prev)->rect.y;
-      if (get_element_by_idx(ctx,elem->tree.parent)->direction==DIR_X){
-        elem->rect.x+=get_element_by_idx(ctx,elem->tree.prev)->rect.w;
-
-        elem->rect.x+=get_element_by_idx(ctx,elem->tree.parent)->gap; // only if sibling
-      } else {
-        elem->rect.y+=get_element_by_idx(ctx,elem->tree.prev)->rect.h;
-        elem->rect.y+=get_element_by_idx(ctx,elem->tree.parent)->gap; // only if sibling      
-      }
-    }
-
-  }
+  mu_adjust_children_positions(ctx,get_element_by_idx(ctx,0));
+  
 }
 
 void mu_draw_debug_elems(mu_Context *ctx){
@@ -1803,7 +1806,7 @@ void mu_print_debug_tree(mu_Context *ctx){
   {
     mu_Elem*elem=get_element_by_idx(ctx,i);
     
-    printf("ELEMENT %03d: ID %02d, x %03d, y %03d,h %03d, w %03d,  tier %03d,  first child %d, last child %d, number of children %d, next sibling %d, previous sibling %d, parent %d", i, elem->idx, elem->rect.x,elem->rect.y,elem->rect.h,elem->rect.w, elem->tier, elem->tree.first_child,elem->tree.last_child, elem->tree.count, elem->tree.next,elem->tree.prev,elem->tree.parent);
+    printf("ELEMENT %03d: ID %02d, x %03d, y %03d,h %03d, w %03d,  tier %03d,  number of children %d, parent %d", i, elem->idx, elem->rect.x,elem->rect.y,elem->rect.h,elem->rect.w, elem->tier, elem->tree.count,elem->tree.parent);
     printf("chlidren: ");
     for (int i = 0; i < elem->tree.count; i++)
     {

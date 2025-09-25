@@ -56,22 +56,32 @@ static void leftbar(mu_Context *ctx) {
 
 static void rightbar(mu_Context *ctx) {
      if (mu_begin_window_ex(ctx, "Right Bar", mu_rect(width-rightbarwidth, topbarheight,rightbarwidth, height-topbarheight-botbarheight), MU_OPT_NOTITLE|MU_OPT_NORESIZE)) {
-        mu_begin_elem_ex(ctx,800,480,DIR_Y,MU_ALIGN_CENTER);
+        mu_begin_elem_ex(ctx,800,480,DIR_Y,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_LEFT));
 
-        mu_begin_elem(ctx,200,300);
+          mu_begin_elem(ctx,1,20);
+          mu_end_elem(ctx);
+          
+          mu_begin_elem_ex(ctx,1,0,DIR_X,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_LEFT));
+            mu_begin_elem_ex(ctx,40,300,DIR_Y,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_LEFT));
+            mu_end_elem(ctx); 
+            mu_begin_elem_ex(ctx,0,300,DIR_Y,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_LEFT));
+            mu_end_elem(ctx); 
+            mu_begin_elem_ex(ctx,40,1,DIR_Y,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_LEFT));
+            mu_end_elem(ctx); 
+          mu_end_elem(ctx);
+
+          mu_begin_elem(ctx,1,20);
+          mu_end_elem(ctx);
         mu_end_elem(ctx);
+
+        mu_adjust_size(ctx,&ctx->element_stack.items[0]);
         
-        mu_begin_elem(ctx,200,300);
-        mu_end_elem(ctx);
+        mu_apply_size(ctx);
 
-        mu_begin_elem(ctx,200,300);
-        mu_end_elem(ctx);
-        mu_end_elem(ctx);
-
-        mu_calculate_size(ctx);
         mu_adjust_elem_positions(ctx);
+        
         mu_draw_debug_elems(ctx);
-         mu_print_debug_tree(ctx);
+        // mu_print_debug_tree(ctx);
 
         // mu_draw_debug_outline_ex(ctx, (mu_Rect){40,40,40,40}, (mu_Color){100,190,0,255}, 3);
 
@@ -100,7 +110,7 @@ static void background(mu_Context *ctx) {
 static void process_frame(mu_Context *ctx) {
   mu_begin(ctx);
 //   background(ctx);
-  leftbar(ctx);
+  // leftbar(ctx);
   rightbar(ctx);
 //   title_bar(ctx);
 //   bottombar(ctx);
@@ -209,7 +219,7 @@ int main (int argc, char *argv[]) {
         }
         }
         r_present();    
-      quit=1;
+      //  quit=1;
     }
     return 0;
 }

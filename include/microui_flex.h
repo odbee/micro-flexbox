@@ -135,7 +135,7 @@ typedef MU_REAL mu_Real;
 typedef void* mu_Font;
 
 typedef struct { int x, y; } mu_Vec2;
-typedef struct { int x, y; } mu_fVec2;
+typedef struct { float x, y; } mu_fVec2;
 
 typedef struct { int x, y, w, h; } mu_Rect;
 typedef struct { unsigned char r, g, b, a; } mu_Color;
@@ -174,10 +174,6 @@ typedef enum {
 typedef struct {
   int children[MU_MAX_CHILDREN]; // id of children
   int count;
-  int next; // id of next.. etc
-  int prev;
-  int first_child;
-  int last_child;
   int parent;
 } mu_Tree;
 
@@ -219,8 +215,7 @@ typedef struct {
 
   mu_Tree tree;
   mu_Text text;
-
-
+  int leftoversize;
   int idx;
   int tier;
 } mu_Elem;
@@ -291,7 +286,7 @@ struct mu_Context {
   int key_down;
   int key_pressed;
   size_t bfslist[MU_ELEMENTSTACK_SIZE];
-  int current_parent;
+  mu_Elem* current_parent;
 
   char input_text[32];
 };
@@ -395,7 +390,8 @@ void mu_begin_elem_ex(mu_Context *ctx, float sizex, float sizey, mu_Dir directio
 void mu_end_elem(mu_Context *ctx);
 void mu_sort_elems(mu_Context *ctx);
 
-void mu_calculate_size(mu_Context *ctx);
+void mu_adjust_size(mu_Context *ctx,mu_Elem* elem);
+void mu_apply_size(mu_Context *ctx);
 void mu_adjust_elem_positions(mu_Context *ctx);
 void mu_draw_debug_elems(mu_Context *ctx);
 void mu_print_debug_tree(mu_Context *ctx);
