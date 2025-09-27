@@ -94,6 +94,21 @@ mu_Vec2 mu_vec2(int x, int y) {
   return res;
 }
 
+float mu_fabs(float x) {
+    union {
+        float f;
+        unsigned int u;
+    } v;
+
+    v.f = x;
+    v.u &= 0x7FFFFFFF;  // clear the sign bit
+    return v.f;
+}
+
+float mu_fabsmin(float a, float b){
+  return (mu_fabs(a) < mu_fabs(b) ? (a) : (b));
+}
+
 /// @brief Initializes and returns a new rectangle.
 ///
 /// This function returns a new mu_Rect structure and sets its position
@@ -209,8 +224,7 @@ void mu_init(mu_Context *ctx) {
   ctx->style = &ctx->_style;
   ctx->tier=0;
 
-  for (size_t* ptr = ctx->bfslist, val = 1; ptr < ctx->bfslist + MU_ELEMENTSTACK_SIZE; )
-      *ptr++ = val++;
+
 }
 
 /// @brief Starts a new UI frame.
@@ -233,15 +247,6 @@ void mu_begin(mu_Context *ctx) {
   ctx->frame++;
 }
 
-/// @brief Compares two container pointers by their z-index for sorting.
-/// @param a A pointer to the first `mu_Container` pointer.
-/// @param b A pointer to the second `mu_Container` pointer.
-/// @return An integer less than, equal to, or greater than zero if the
-///         z-index of the first container is found to be less than, equal to,
-///         or greater than the second.
-static int compare_zindex(const void *a, const void *b) {
-  return (*(mu_Container**) a)->zindex - (*(mu_Container**) b)->zindex;
-}
 
 /// @brief Finalizes a UI frame.
 /// @param ctx The context to finalize.
@@ -260,13 +265,13 @@ void mu_end(mu_Context *ctx) {
   expect(ctx->layout_stack.idx    == 0);
 
   /* handle scroll input */
-  if (ctx->scroll_target) {
+  if (ctx->scroll_target) { //TODO CHECK SCROLL TARGET
     ctx->scroll_target->scroll.x += ctx->scroll_delta.x;
     ctx->scroll_target->scroll.y += ctx->scroll_delta.y;
   }
 
   /* unset focus if focus id was not touched this frame */
-  if (!ctx->updated_focus) { ctx->focus = 0; }
+  if (!ctx->updated_focus) { ctx->focus = 0; }//TODO CHECK FOCUS
   ctx->updated_focus = 0;
 
   // TODO EDIT FOR ADDING TOUCH INPUT
@@ -287,9 +292,8 @@ void mu_end(mu_Context *ctx) {
 
   /* sort root containers by zindex */
   n = ctx->root_list.idx;
-  qsort(ctx->root_list.items, n, sizeof(mu_Container*), compare_zindex);
 
-  /* set root container jump commands */
+  /* set root container jump commands */ //TODO CHECK THIS
   for (i = 0; i < n; i++) {
     mu_Container *cnt = ctx->root_list.items[i];
     /* if this is the first container then make the first command jump to it.
@@ -306,6 +310,8 @@ void mu_end(mu_Context *ctx) {
       cnt->tail->jump.dst = ctx->command_list.items + ctx->command_list.idx;
     }
   }
+
+  
 }
 
 /// @brief Sets the input focus to a specific UI element.
@@ -349,7 +355,7 @@ static void hash(mu_Id *hash, const void *data, int size) {
 /// element IDs are unique within their hierarchical context. 
 /// @warning If multiple root-level elements are given the same name, they will
 ///          generate identical IDs, which can lead to unpredictable behavior.
-mu_Id mu_get_id(mu_Context *ctx, const void *data, int size) {
+mu_Id mu_get_id(mu_Context *ctx, const void *data, int size) { //TODO CHECK WHAT IDS ARE FORE
   int idx = ctx->id_stack.idx;
   mu_Id res = (idx > 0) ? ctx->id_stack.items[idx - 1] : HASH_INITIAL;
   hash(&res, data, size);
@@ -415,6 +421,8 @@ mu_Rect mu_get_clip_rect(mu_Context *ctx) {
 /// @brief Determines if a rectangle is visible, partially visible, or invisible in relation on the current clipping rectangle.
 /// @param ctx The MicroUI context.
 /// @param r The rectangle to check against the current clip rectangle.
+/// @param cr  the current clip rectangle.
+
 /// @return 
 ///         - `MU_CLIP_ALL` if the rectangle is entirely outside the clip rect.
 ///
@@ -424,8 +432,8 @@ mu_Rect mu_get_clip_rect(mu_Context *ctx) {
 ///
 /// This function is a utility for determining whether a given rectangle needs
 /// to be clipped, is fully visible, or is not visible at all.
-int mu_check_clip(mu_Context *ctx, mu_Rect r) {
-  mu_Rect cr = mu_get_clip_rect(ctx);
+
+int mu_check_clip_ex(mu_Rect r, mu_Rect cr) {
   if (r.x > cr.x + cr.w || r.x + r.w < cr.x ||
       r.y > cr.y + cr.h || r.y + r.h < cr.y   ) { return MU_CLIP_ALL; }
   if (r.x >= cr.x && r.x + r.w <= cr.x + cr.w &&
@@ -434,36 +442,6 @@ int mu_check_clip(mu_Context *ctx, mu_Rect r) {
 }
 
 
-// TODO EXPLAIN SCROLL BETTER
-/// @brief Initializes and pushes a new layout onto the layout stack.
-/// @param ctx The MicroUI context.
-/// @param body The body rectangle that defines the outer bounds of the layout's content.
-/// @param scroll The scroll offset of the layout's content. This value is
-///               subtracted from the body coordinates to translate the layout from
-///               its virtual content space to the screen's physical coordinate space.
-///
-/// This function sets up a new layout for positioning widgets.
-///
-/// 1. It adjusts the layout's body for scrolling: By subtracting the
-///    scroll value from the body's coordinates, it creates a new coordinate
-///    system for the layout's content. This ensures that when widgets are
-///    drawn, they are correctly shifted to appear within the visible 'body'
-///    rectangle, regardless of how far the user has scrolled.
-///
-/// 2. It initializes its dimensions for tracking content size: The layout's
-///    maximum size is set to a very small initial value. As widgets are added
-///    to the layout, the system updates this value to track the total space
-///    needed by all the content, which is used to determine if scrollbars are
-///    necessary.
-static void push_layout(mu_Context *ctx, mu_Rect body, mu_Vec2 scroll) {
-  mu_Layout layout;
-  int width = 0;
-  memset(&layout, 0, sizeof(layout));
-  layout.body = mu_rect(body.x - scroll.x, body.y - scroll.y, body.w, body.h);
-  layout.max = mu_vec2(-0x1000000, -0x1000000);
-  push(ctx->layout_stack, layout);
-  mu_layout_row(ctx, 1, &width, 0);
-}
 
 /// @brief Returns a pointer to the current layout on the stack.
 /// @param ctx The MicroUI context.
@@ -474,8 +452,6 @@ static void push_layout(mu_Context *ctx, mu_Rect body, mu_Vec2 scroll) {
 static mu_Layout* get_layout(mu_Context *ctx) {
   return &ctx->layout_stack.items[ctx->layout_stack.idx - 1];
 }
-
-
 
 
 /// @brief Finalizes and ends the scope of the current container.
@@ -496,7 +472,7 @@ static void pop_container(mu_Context *ctx) {
   cnt->content_size.y = layout->max.y - layout->body.y;
   /* pop container, layout and id */
   pop(ctx->container_stack);
-  pop(ctx->layout_stack);
+  // pop(ctx->layout_stack);
   mu_pop_id(ctx);
 }
 
@@ -771,9 +747,9 @@ void mu_draw_rect(mu_Context *ctx, mu_Rect rect, mu_Color color) {
   }
 }
 
-
-void mu_draw_debug_rect(mu_Context *ctx, mu_Rect rect, mu_Color color) {
+void mu_draw_debug_clip_rect(mu_Context *ctx, mu_Rect rect, mu_Rect clip_rect, mu_Color color) {
   mu_Command *cmd;
+  rect = intersect_rects(rect, clip_rect);
   if (rect.w > 0 && rect.h > 0) {
     cmd = mu_push_command(ctx, MU_COMMAND_RECT, sizeof(mu_RectCommand));
     cmd->rect.rect = rect;
@@ -781,12 +757,6 @@ void mu_draw_debug_rect(mu_Context *ctx, mu_Rect rect, mu_Color color) {
   }
 }
 
-
-
-
-void mu_draw_point(mu_Context *ctx, mu_Vec2 pos, mu_Color color) {
-  mu_draw_rect(ctx,(mu_Rect){pos.x,pos.y,40,40},color);
-}
 
 /// @brief Adds a command to draw a rectangular outline around a given rectangle with a specified thickness. A negative thickness will cause the outline to be drawn inward.
 /// @param ctx The MicroUI context.
@@ -805,11 +775,12 @@ void mu_draw_outline_ex(mu_Context *ctx, mu_Rect rect, mu_Color color, int t) {
   mu_draw_rect(ctx, mu_rect(rect.x + rect.w, rect.y, t, rect.h), color); // right line
 }
 
-void mu_draw_debug_outline_ex(mu_Context *ctx, mu_Rect rect, mu_Color color, int t) {
-  mu_draw_debug_rect(ctx, mu_rect(rect.x - t, rect.y - t, rect.w + (t * 2), t), color); // top line
-  mu_draw_debug_rect(ctx, mu_rect(rect.x - t, rect.y + rect.h, rect.w + (t * 2), t), color); // bottom line
-  mu_draw_debug_rect(ctx, mu_rect(rect.x - t, rect.y, t, rect.h), color); // left line
-  mu_draw_debug_rect(ctx, mu_rect(rect.x + rect.w, rect.y, t, rect.h), color); // right line
+
+void mu_draw_debug_clip_outline_ex(mu_Context *ctx, mu_Rect rect,  mu_Rect clip_rect, mu_Color color, int t) {
+  mu_draw_debug_clip_rect(ctx, mu_rect(rect.x - t, rect.y - t, rect.w + (t * 2), t),clip_rect, color); // top line
+  mu_draw_debug_clip_rect(ctx, mu_rect(rect.x - t, rect.y + rect.h, rect.w + (t * 2), t),clip_rect, color); // bottom line
+  mu_draw_debug_clip_rect(ctx, mu_rect(rect.x - t, rect.y, t, rect.h),clip_rect, color); // left line
+  mu_draw_debug_clip_rect(ctx, mu_rect(rect.x + rect.w, rect.y, t, rect.h),clip_rect, color); // right line
 }
 
 
@@ -838,6 +809,47 @@ void mu_draw_text(mu_Context *ctx, mu_Font font, const char *str, int len,
   if (clipped == MU_CLIP_ALL ) { return; }
   if (clipped == MU_CLIP_PART) { mu_set_clip(ctx, mu_get_clip_rect(ctx)); }
   /* add command */
+  if (len < 0) { len = strlen(str); }
+  cmd = mu_push_command(ctx, MU_COMMAND_TEXT, sizeof(mu_TextCommand) + len);
+  memcpy(cmd->text.str, str, len);
+  cmd->text.str[len] = '\0';
+  cmd->text.pos = pos;
+  cmd->text.color = color;
+  cmd->text.font = font;
+  /* reset clipping if it was set */
+  if (clipped) { mu_set_clip(ctx, unclipped_rect); }
+}
+
+
+
+
+void mu_draw_text_ex(mu_Context *ctx, mu_Font font, const char *str, int len,
+  mu_Vec2 pos, mu_Color color, mu_Rect clip,mu_Rect parent,mu_Alignment textAlignment,int padding)
+{
+
+  mu_Command *cmd;
+
+    mu_fVec2 m;
+  if (textAlignment & MU_ALIGN_LEFT)   m.x = 0.0f;
+  if (textAlignment & MU_ALIGN_CENTER) m.x = 0.5f;
+  if (textAlignment & MU_ALIGN_RIGHT)  m.x = 1.0f;
+  if (textAlignment & MU_ALIGN_TOP)    m.y = 0.0f;
+  if (textAlignment & MU_ALIGN_MIDDLE) m.y = 0.5f;
+  if (textAlignment & MU_ALIGN_BOTTOM) m.y = 1.0f;
+  
+  pos.x+= (parent.w - (ctx->text_width(font, str, len)+2*padding))*m.x+padding;
+  pos.y+= (parent.h - (ctx->text_height(font)         +2*padding))*m.y + padding;
+
+
+  mu_Rect rect = mu_rect(
+    pos.x, pos.y, ctx->text_width(font, str, len), ctx->text_height(font));
+  int clipped = mu_check_clip_ex(rect, clip);
+  // printf("checking clip of text %s in rect %d %d %d %d against clip: %d %d %d %d. returned %d \n ", str,rect.x,rect.y,rect.w,rect.h,clip.x,clip.y,clip.w,clip.h,clipped);
+  mu_draw_rect(ctx,rect,mu_color(255,0,0,50));
+
+  if (clipped == MU_CLIP_ALL ) { return; }
+  /* add command */
+
   if (len < 0) { len = strlen(str); }
   cmd = mu_push_command(ctx, MU_COMMAND_TEXT, sizeof(mu_TextCommand) + len);
   memcpy(cmd->text.str, str, len);
@@ -881,190 +893,6 @@ void mu_draw_icon(mu_Context *ctx, int id, mu_Rect rect, mu_Color color) {
 **============================================================================*/
 
 enum { RELATIVE = 1, ABSOLUTE = 2 };
-
-/// @brief Starts a new column layout.
-/// @param ctx The MicroUI context.
-///
-/// This function creates a new layout scope for positioning widgets. It
-/// pushes a new, non-scrollable layout onto the stack, using the next
-/// available space in the current layout to define its bounds. Subsequent
-/// widgets will be placed within this new column.
-void mu_layout_begin_column(mu_Context *ctx) {
-  push_layout(ctx, mu_layout_next(ctx), mu_vec2(0, 0));
-}
-
-/// @brief Ends the current column layout.
-/// @param ctx The MicroUI context.
-///
-/// This function ends a column layout scope by popping it from the stack. It
-/// then inherits key state from the child layout and merges it into the parent
-/// layout, including the layout position, the next available row position, and
-/// the maximum dimensions. This ensures the parent layout correctly accounts for
-/// the size and placement of the ended column.
-void mu_layout_end_column(mu_Context *ctx) {
-  mu_Layout *a, *b;
-  b = get_layout(ctx);
-  pop(ctx->layout_stack);
-  /* inherit position/next_row/max from child layout if they are greater */
-  a = get_layout(ctx);
-  a->position.x = mu_max(a->position.x, b->position.x + b->body.x - a->body.x);
-  a->next_row = mu_max(a->next_row, b->next_row + b->body.y - a->body.y);
-  a->max.x = mu_max(a->max.x, b->max.x);
-  a->max.y = mu_max(a->max.y, b->max.y);
-}
-
-/// @brief Starts a new row in the current layout.
-/// @param ctx The MicroUI context.
-/// @param items The number of items in the new row.
-/// @param widths An optional array of integers specifying the width for each
-///        item. If NULL, widths are automatically managed by `mu_layout_next`.
-/// @param height The fixed height of the row. A value of 0 indicates that the
-///        height should be determined by the content.
-/// @param direction The direction in which the layout Tiles. x_dir or y_dir. X_dir is horizontally while y_dir is vertically
-///
-/// This function sets up a new row within the current layout scope. The
-/// configuration (number of items, widths, and height) is applied to the
-/// current layout on the stack. ALL subsequent items and widgets will be
-/// created within this row, according to this configuration, until the layout
-/// scope is explicitly changed.
-void mu_layout_row_ex(mu_Context *ctx, int items, const int *widths, int height, mu_Dir layout_direction) {
-  mu_Layout *layout = get_layout(ctx);
-  if (widths) {
-    expect(items <= MU_MAX_WIDTHS);
-    memcpy(layout->widths, widths, items * sizeof(widths[0]));
-  }
-  layout->items = items;
-  layout->position = mu_vec2(layout->indent, layout->next_row);
-  layout->size.y = height;
-  layout->item_index = 0;
-  layout->square=false;
-  layout->direction=layout_direction;
-}
-
-void mu_layout_row(mu_Context *ctx, int items, const int *widths, int height) {
-  mu_layout_row_ex(ctx,items,widths,height,DIR_X);
-}
-
-
-/// @brief Sets the width of the next item in the current layout.
-/// @param ctx The MicroUI context.
-/// @param width The width to set for the next item.
-///
-/// This function provides a way to explicitly set the width of the next item
-/// to be laid out. This overrides any widths specified in `mu_layout_row` and
-/// allows for fine-grained control over individual item dimensions.
-void mu_layout_width(mu_Context *ctx, int width) {
-  get_layout(ctx)->size.x = width;
-}
-
-/// @brief Sets the height of the next item in the current layout.
-/// @param ctx The MicroUI context.
-/// @param height The height to set for the next item.
-///
-/// This function provides a way to explicitly set the height of the next item
-/// to be laid out. This overrides any height specified for the row in
-/// `mu_layout_row` and allows for fine-grained control over individual item
-/// dimensions.
-void mu_layout_height(mu_Context *ctx, int height) {
-  get_layout(ctx)->size.y = height;
-}
-
-/// @brief Manually sets the position and size of the next item.
-/// @param ctx The MicroUI context.
-/// @param r The rectangle to use for the next item's position and size.
-/// @param relative A flag indicating if the position is relative to the current
-///        layout. If non-zero, it is relative; otherwise, it is absolute.
-///
-/// This function overrides the default layout behavior and explicitly defines the
-/// position and size of the next item to be laid out. The `relative` flag
-/// determines if the provided rectangle `r` is interpreted as an absolute
-/// position or as a position relative to the current layout.
-void mu_layout_set_next(mu_Context *ctx, mu_Rect r, int relative) {
-  mu_Layout *layout = get_layout(ctx);
-  layout->next = r;
-  layout->next_type = relative ? RELATIVE : ABSOLUTE;
-}
-
-
-void mu_layout_set_squares(mu_Context *ctx, mu_Bool isSquare) {
-  mu_Layout *layout = get_layout(ctx);
-  layout->square = isSquare;
-  
-}
-
-
-/// @brief Calculates and returns the rectangle for the next item in the layout.
-/// @param ctx The MicroUI context.
-/// @return The calculated rectangle for the next item.
-///
-/// This function is the core of the layout system, providing the position and
-/// size for the next item to be laid out. It has two modes of operation:
-///
-/// 1. Manual Mode: If `mu_layout_set_next` was called, it returns the
-///    pre-defined rectangle.
-///
-/// 2. Automatic Mode: It uses the current layout's state (set by
-///    `mu_layout_row`) to calculate the position. It handles row wrapping,
-///    determines the item's size based on the provided widths and heights,
-///    and handles dynamic sizing. After calculating the rectangle, it updates
-///    the layout's internal state to prepare for the next item.
-mu_Rect mu_layout_next(mu_Context *ctx) {
-  
-  mu_Layout *layout = get_layout(ctx);
-
-  mu_Style *style = ctx->style;
-  mu_Rect res;
-
-  if (layout->next_type) {
-    /* handle rect set by `mu_layout_set_next`. maual mode */
-    int type = layout->next_type;
-    layout->next_type = 0;
-    res = layout->next;
-    if (type == ABSOLUTE) { return (ctx->last_rect = res); }
-
-  } else {
-    /*  automatic mode */
-    //If we placed all the items in a row.. make a new now
-    if (layout->item_index == layout->items) {
-      mu_layout_row_ex(ctx, layout->items, NULL, layout->size.y,(layout->direction +1) % 1);
-    }
-
-    /* get top left position of current layout */
-    res.x = layout->position.x;
-    res.y = layout->position.y;
-
-    /* if it has multiple items let it use the width */
-    res.w = layout->items > 0 ? layout->widths[layout->item_index] : layout->size.x;
-    res.h = layout->size.y;
-    if (res.w == 0) { res.w = style->size.x + style->padding * 2; }
-    if (res.h == 0) { res.h = style->size.y + style->padding * 2; }
-    if (res.w <  0) { res.w += layout->body.w - res.x + 1; }
-    if (res.h <  0) { res.h += layout->body.h - res.y + 1; }
-    if (layout->square==true){
-      res.h=res.w;
-    }
-    layout->item_index++;
-  }
-
-  /* update x position of current layout */
-  if (layout->direction==DIR_X){
-    layout->position.x += res.w + style->spacing;
-  } else {
-    layout->position.y += res.h + style->spacing;
-  }
-  
-  layout->next_row = mu_max(layout->next_row, res.y + res.h + style->spacing);
-
-  /* apply body offset */
-  res.x += layout->body.x;
-  res.y += layout->body.y;
-
-  /* update max position */
-  layout->max.x = mu_max(layout->max.x, res.x + res.w);
-  layout->max.y = mu_max(layout->max.y, res.y + res.h);
-
-  return (ctx->last_rect = res);
-}
 
 
 /*============================================================================
@@ -1163,31 +991,31 @@ int mu_mouse_over(mu_Context *ctx, mu_Rect rect) {
     in_hover_root(ctx);
 }
 
+
+
 /// @brief Updates the hover and focus state for a control.
 /// @param ctx The MicroUI context.
-/// @param id The unique identifier of the control.
-/// @param rect The bounding rectangle of the control.
-/// @param opt A bitmask of options for the control, such as `MU_OPT_NOINTERACT`
-///        and `MU_OPT_HOLDFOCUS`.
-///
+/// @param elem gui element
 /// This function is a core part of the input handling system. It updates the
 /// context's `hover` and `focus` fields for a given control based on mouse
 /// position and button state. It handles conditions for gaining and losing focus,
 /// and it respects the `MU_OPT_NOINTERACT` flag, which prevents any state
 /// changes. The `MU_OPT_HOLDFOCUS` option is also handled, which allows a
 /// control to retain focus even when the mouse button is released.
-void mu_update_control(mu_Context *ctx, mu_Id id, mu_Rect rect, int opt) {
+void mu_update_element_control(mu_Context *ctx, mu_Elem* elem) {
+  unsigned int id = elem->hash;
+  mu_Rect rect = elem->rect;
+  int opt =0;
   int mouseover = mu_mouse_over(ctx, rect);
 
-  if (ctx->focus == id) { ctx->updated_focus = 1; }
+  if (ctx->focus == id) { ctx->updated_focus = 1;}
   if (opt & MU_OPT_NOINTERACT) { return; }
   if (mouseover && !ctx->mouse_down) { ctx->hover = id; }
 
   if (ctx->focus == id) {
     if (ctx->mouse_pressed && !mouseover) { mu_set_focus(ctx, 0); }
-    if (!ctx->mouse_down && ~opt & MU_OPT_HOLDFOCUS) { mu_set_focus(ctx, 0); }
+    if (!ctx->mouse_down && ~opt & MU_OPT_HOLDFOCUS) { mu_set_focus(ctx, 0);elem->cooldown=1; }
   }
-
   if (ctx->hover == id) {
     if (ctx->mouse_pressed) {
       mu_set_focus(ctx, id);
@@ -1197,453 +1025,48 @@ void mu_update_control(mu_Context *ctx, mu_Id id, mu_Rect rect, int opt) {
   }
 }
 
-/// @brief Adds a command to draw a block of word-wrapped text.
-/// @param ctx The MicroUI context.
-/// @param text The string containing the text to draw.
-///
-/// This function draws a block of text that automatically wraps to fit within
-/// the current layout's available width. It creates a new layout column to
-/// scope the text block. It then iterates through the text to determine word
-/// wrap points, drawing each line of text and advancing to the next. The
-/// function also respects explicit newline characters in the input string.
-/// Finally, it ends the layout column, ensuring the parent layout correctly
-/// accounts for the space used by the text.
-void mu_textelem(mu_Context *ctx, const char *text) {
-  const char *start, *end, *p = text;
-  int width = -1;
-  mu_Font font = ctx->style->font;
-  mu_Color color = ctx->style->colors[MU_COLOR_TEXT];
-  mu_layout_begin_column(ctx);
-  mu_layout_row(ctx, 1, &width, ctx->text_height(font));
-  do {
-    mu_Rect r = mu_layout_next(ctx);
-    int w = 0;
-    start = end = p;
+const char *int_to_str(int value) {
+    static char buffer[12];  // reused on each call
+    char *p = buffer;
+    char *p1, *p2;
+    unsigned int u = value;
+
+    if (value < 0) {
+        *p++ = '-';
+        u = -value;
+    }
+
+    p1 = p;
     do {
-      const char* word = p;
-      while (*p && *p != ' ' && *p != '\n') { p++; }
-      w += ctx->text_width(font, word, p - word);
-      if (w > r.w && end != start) { break; }
-      w += ctx->text_width(font, p, 1);
-      end = p++;
-    } while (*end && *end != '\n');
-    mu_draw_text(ctx, font, start, end - start, mu_vec2(r.x, r.y), color);
-    p = end + 1;
-  } while (*end);
-  mu_layout_end_column(ctx);
-}
+        *p++ = (u % 10) + '0';
+        u /= 10;
+    } while (u > 0);
 
-/// @brief Adds a text label to the current layout.
-/// @param ctx The MicroUI context.
-/// @param text The string containing the label's text.
-///
-/// This is a convenience function that draws a static text label. It gets the
-/// rectangle for the next available item from the layout and then calls
-/// `mu_draw_control_text` to handle the drawing, alignment, and clipping.
-void mu_label(mu_Context *ctx, const char *text) {
-  mu_draw_control_text(ctx, text, mu_layout_next(ctx), MU_COLOR_TEXT, 0);
-}
+    *p = '\0';
 
-/// @brief Adds an interactive button with optional text and icon.
-/// @param ctx The MicroUI context.
-/// @param label The text label for the button, or NULL if none is needed.
-/// @param icon The ID of an icon to draw on the button, or 0 if none is needed.
-/// @param opt A bitmask of options, such as alignment or `MU_OPT_NOFRAME`.
-/// @return A bitmask of result flags, including `MU_RES_SUBMIT` if the button
-///         was clicked.
-///
-/// This function creates a fully functional button widget. It manages a unique ID,
-/// retrieves its layout position, and updates its hover and focus state based on
-/// mouse input. It returns the `MU_RES_SUBMIT` flag when it detects a click.
-/// The function also handles drawing the button's frame, label, and icon based
-/// on the provided parameters.
-int mu_button_ex(mu_Context *ctx, const char *label, int icon, int opt) {
-  int res = 0;
-  mu_Id id = label ? mu_get_id(ctx, label, strlen(label))
-                   : mu_get_id(ctx, &icon, sizeof(icon));
-  mu_Rect r = mu_layout_next(ctx);
-  mu_update_control(ctx, id, r, opt);
-  /* handle click */
-  if (ctx->mouse_pressed == MU_MOUSE_LEFT && ctx->focus == id) {
-    res |= MU_RES_SUBMIT;
-  }
-  /* draw */
-  mu_draw_control_frame(ctx, id, r, MU_COLOR_BUTTON, opt);
-  if (label) { mu_draw_control_text(ctx, label, r, MU_COLOR_TEXT, opt); }
-  if (icon) { mu_draw_icon(ctx, icon, r, ctx->style->colors[MU_COLOR_TEXT]); }
-  return res;
-}
-
-/// @brief Adds an interactive checkbox to the current layout.
-/// @param ctx The MicroUI context.
-/// @param label The string label for the checkbox.
-/// @param state A pointer to an integer that holds the checkbox's state. It will
-///        be toggled on click.
-/// @return A bitmask of result flags, including `MU_RES_CHANGE` if the state
-///         was toggled.
-///
-/// This function creates a checkbox widget whose state is tied to the provided
-/// integer pointer. When the checkbox is clicked (anywhere within its
-/// layout rectangle), the state is toggled and the `MU_RES_CHANGE` flag is
-/// returned. The function draws a small square and a checkmark icon if the
-/// state is non-zero, along with a text label.
-int mu_checkbox(mu_Context *ctx, const char *label, int *state) {
-  int res = 0;
-  mu_Id id = mu_get_id(ctx, &state, sizeof(state));
-  mu_Rect r = mu_layout_next(ctx);
-  mu_Rect box = mu_rect(r.x, r.y, r.h, r.h);
-  mu_update_control(ctx, id, r, 0);
-  /* handle click */
-  if (ctx->mouse_pressed == MU_MOUSE_LEFT && ctx->focus == id) {
-    res |= MU_RES_CHANGE;
-    *state = !*state;
-  }
-  /* draw */
-  mu_draw_control_frame(ctx, id, box, MU_COLOR_BASE, 0);
-  if (*state) {
-    mu_draw_icon(ctx, MU_ICON_CHECK, box, ctx->style->colors[MU_COLOR_TEXT]);
-  }
-  r = mu_rect(r.x + box.w, r.y, r.w - box.w, r.h);
-  mu_draw_control_text(ctx, label, r, MU_COLOR_TEXT, 0);
-  return res;
-}
-
-/// @brief Adds a text box for user input.
-/// @param ctx The MicroUI context.
-/// @param buf A character buffer to store the text.
-/// @param bufsz The size of the buffer.
-/// @param id A unique ID for the text box.
-/// @param r The rectangle for the text box.
-/// @param opt A bitmask of options.
-/// @return A bitmask of result flags, including `MU_RES_CHANGE` if the buffer
-///         was modified, and `MU_RES_SUBMIT` if the user pressed the return key.
-///
-/// This function creates a fully functional text box widget. It processes user
-/// input, including text characters, backspace, and the return key, updating
-/// the provided character buffer accordingly. The function's appearance changes
-/// depending on its focus state: when focused, it draws a blinking cursor and
-/// handles text clipping and scrolling. When unfocused, it behaves like a static
-/// label. The function uses `MU_OPT_HOLDFOCUS` to maintain a persistent focus
-/// state.
-int mu_textbox_raw(mu_Context *ctx, char *buf, int bufsz, mu_Id id, mu_Rect r,
-  int opt)
-{
-  int res = 0;
-  mu_update_control(ctx, id, r, opt | MU_OPT_HOLDFOCUS);
-
-  if (ctx->focus == id) {
-    /* handle text input */
-    int len = strlen(buf);
-    int n = mu_min(bufsz - len - 1, (int) strlen(ctx->input_text));
-    if (n > 0) {
-      memcpy(buf + len, ctx->input_text, n);
-      len += n;
-      buf[len] = '\0';
-      res |= MU_RES_CHANGE;
+    // reverse the digits
+    p2 = p - 1;
+    while (p1 < p2) {
+        char tmp = *p1;
+        *p1++ = *p2;
+        *p2-- = tmp;
     }
-    /* handle backspace */
-    if (ctx->key_pressed & MU_KEY_BACKSPACE && len > 0) {
-      /* skip utf-8 continuation bytes */
-      while ((buf[--len] & 0xc0) == 0x80 && len > 0);
-      buf[len] = '\0';
-      res |= MU_RES_CHANGE;
-    }
-    /* handle return */
-    if (ctx->key_pressed & MU_KEY_RETURN) {
-      mu_set_focus(ctx, 0);
-      res |= MU_RES_SUBMIT;
-    }
-  }
-
-  /* draw */
-  mu_draw_control_frame(ctx, id, r, MU_COLOR_BASE, opt);
-  if (ctx->focus == id) {
-    mu_Color color = ctx->style->colors[MU_COLOR_TEXT];
-    mu_Font font = ctx->style->font;
-    int textw = ctx->text_width(font, buf, -1);
-    int texth = ctx->text_height(font);
-    int ofx = r.w - ctx->style->padding - textw - 1;
-    int textx = r.x + mu_min(ofx, ctx->style->padding);
-    int texty = r.y + (r.h - texth) / 2;
-    mu_push_clip_rect(ctx, r);
-    mu_draw_text(ctx, font, buf, -1, mu_vec2(textx, texty), color);
-    mu_draw_rect(ctx, mu_rect(textx + textw, texty, 1, texth), color);
-    mu_pop_clip_rect(ctx);
-  } else {
-    mu_draw_control_text(ctx, buf, r, MU_COLOR_TEXT, opt);
-  }
-
-  return res;
+    return buffer;  // caller gets pointer
 }
 
-/// @brief Provides a text-based editing mode for a number.
-/// @param ctx The MicroUI context.
-/// @param value A pointer to the `mu_Real` value to be edited.
-/// @param r The rectangle for the control.
-/// @param id The unique ID for the control.
-/// @return Returns 1 if the number is currently being edited via the text box,
-///         otherwise 0.
-///
-/// This is a utility function that allows a user to edit a numerical value
-/// using a standard text box. The editing mode is activated by shift-clicking
-/// on the control. While active, the function displays a text box, handles
-/// keyboard input, and, upon submission (by pressing enter or unfocusing),
-/// converts the text back into a number to update the `value`.
-static int number_textbox(mu_Context *ctx, mu_Real *value, mu_Rect r, mu_Id id) {
-  if (ctx->mouse_pressed == MU_MOUSE_LEFT && ctx->key_down & MU_KEY_SHIFT &&
-      ctx->hover == id
-  ) {
-    ctx->number_edit = id;
-    sprintf(ctx->number_edit_buf, MU_REAL_FMT, *value);
-  }
-  if (ctx->number_edit == id) {
-    int res = mu_textbox_raw(
-      ctx, ctx->number_edit_buf, sizeof(ctx->number_edit_buf), id, r, 0);
-    if (res & MU_RES_SUBMIT || ctx->focus != id) {
-      *value = strtod(ctx->number_edit_buf, NULL);
-      ctx->number_edit = 0;
-    } else {
-      return 1;
-    }
-  }
-  return 0;
-}
 
-/// @brief Adds a text box for user input.
-/// @param ctx The MicroUI context.
-/// @param buf A character buffer to store the text.
-/// @param bufsz The size of the buffer.
-/// @param opt A bitmask of options.
-/// @return A bitmask of result flags, typically `MU_RES_CHANGE` on input
-///         and `MU_RES_SUBMIT` on return.
-///
-/// This is a convenience function that provides a simple way to add a text box
-/// to the current layout. It automatically generates a unique ID and retrieves
-/// the next available rectangle from the layout before calling `mu_textbox_raw`
-/// to handle all the input and drawing logic.
-int mu_textbox_ex(mu_Context *ctx, char *buf, int bufsz, int opt) {
-  mu_Id id = mu_get_id(ctx, &buf, sizeof(buf));
-  mu_Rect r = mu_layout_next(ctx);
-  return mu_textbox_raw(ctx, buf, bufsz, id, r, opt);
-}
 
-/// @brief Adds an interactive slider to the current layout.
-/// @param ctx The MicroUI context.
-/// @param value A pointer to the `mu_Real` value to modify.
-/// @param low The minimum value of the slider.
-/// @param high The maximum value of the slider.
-/// @param step The step size to snap the value to, or 0 for no stepping.
-/// @param fmt A `printf`-style format string for displaying the value.
-/// @param opt A bitmask of options.
-/// @return A bitmask of result flags, including `MU_RES_CHANGE` if the value
-///         was modified.
-///
-/// This function creates a horizontal slider control. It provides two modes of
-/// input: a standard drag-and-drop mode for the thumb, and a text-based editing
-/// mode that can be activated by shift-clicking the slider. The function handles
-/// clamping the value within the `low` and `high` bounds, snapping the value
-/// to the nearest `step`, and updating the value at the provided pointer. It
-/// also handles drawing the slider's base, thumb, and a text representation of
-/// the current value.
-int mu_slider_ex(mu_Context *ctx, mu_Real *value, mu_Real low, mu_Real high,
-  mu_Real step, const char *fmt, int opt)
-{
-  char buf[MU_MAX_FMT + 1];
-  mu_Rect thumb;
-  int x, w, res = 0;
-  mu_Real last = *value, v = last;
-  mu_Id id = mu_get_id(ctx, &value, sizeof(value));
-  mu_Rect base = mu_layout_next(ctx);
-
-  /* handle text input mode */
-  if (number_textbox(ctx, &v, base, id)) { return res; }
-
-  /* handle normal mode */
-  mu_update_control(ctx, id, base, opt);
-
-  /* handle input */
-  if (ctx->focus == id &&
-      (ctx->mouse_down | ctx->mouse_pressed) == MU_MOUSE_LEFT)
-  {
-    v = low + (ctx->mouse_pos.x - base.x) * (high - low) / base.w;
-    if (step) { v = ((long long)((v + step / 2) / step)) * step; }
-  }
-  /* clamp and store value, update res */
-  *value = v = mu_clamp(v, low, high);
-  if (last != v) { res |= MU_RES_CHANGE; }
-
-  /* draw base */
-  mu_draw_control_frame(ctx, id, base, MU_COLOR_BASE, opt);
-  /* draw thumb */
-  w = ctx->style->thumb_size;
-  x = (v - low) * (base.w - w) / (high - low);
-  thumb = mu_rect(base.x + x, base.y, w, base.h);
-  mu_draw_control_frame(ctx, id, thumb, MU_COLOR_BUTTON, opt);
-  /* draw text  */
-  sprintf(buf, fmt, v);
-  mu_draw_control_text(ctx, buf, base, MU_COLOR_TEXT, opt);
-
-  return res;
-}
-
-/// @brief Adds an interactive number field to the current layout.
-/// @param ctx The MicroUI context.
-/// @param value A pointer to the `mu_Real` value to modify.
-/// @param step The value change per pixel of horizontal mouse movement.
-/// @param fmt A `printf`-style format string for displaying the value.
-/// @param opt A bitmask of options.
-/// @return A bitmask of result flags, including `MU_RES_CHANGE` if the value
-///         was modified.
-///
-/// This function creates a numerical input field. It provides two methods for
-/// editing the value: dragging the mouse horizontally on the field itself, or
-/// using a text-based editing mode that can be activated by shift-clicking. The
-/// value is updated based on the `step` parameter during dragging and the
-/// formatted string representation is displayed.
-int mu_number_ex(mu_Context *ctx, mu_Real *value, mu_Real step,
-  const char *fmt, int opt)
-{
-  char buf[MU_MAX_FMT + 1];
-  int res = 0;
-  mu_Id id = mu_get_id(ctx, &value, sizeof(value));
-  mu_Rect base = mu_layout_next(ctx);
-  mu_Real last = *value;
-
-  /* handle text input mode */
-  if (number_textbox(ctx, value, base, id)) { return res; }
-
-  /* handle normal mode */
-  mu_update_control(ctx, id, base, opt);
-
-  /* handle input */
-  if (ctx->focus == id && ctx->mouse_down == MU_MOUSE_LEFT) {
-    *value += ctx->mouse_delta.x * step;
-  }
-  /* set flag if value changed */
-  if (*value != last) { res |= MU_RES_CHANGE; }
-
-  /* draw base */
-  mu_draw_control_frame(ctx, id, base, MU_COLOR_BASE, opt);
-  /* draw text  */
-  sprintf(buf, fmt, *value);
-  mu_draw_control_text(ctx, buf, base, MU_COLOR_TEXT, opt);
-
-  return res;
-}
-
-/// @brief Draws a collapsible or tree node header and manages its state.
-/// @param ctx The MicroUI context.
-/// @param label The string label for the header.
-/// @param istreenode A flag indicating if the header is part of a tree node.
-/// @param opt Options for the header.
-/// @return Returns `MU_RES_ACTIVE` if the header is expanded, otherwise 0.
-///
-/// This is a private helper function used by collapsible and tree node widgets.
-/// It draws an interactive header and manages its persistent expanded or
-/// collapsed state using an internal pool. A left mouse click toggles the state.
-/// The function returns a flag indicating whether the content associated with
-/// the header should be drawn in the current frame. The `istreenode` flag
-/// affects the way the header's frame is drawn.
-static int header(mu_Context *ctx, const char *label, int istreenode, int opt) {
-  mu_Rect r;
-  int active, expanded;
-  mu_Id id = mu_get_id(ctx, label, strlen(label));
-  int idx = mu_pool_get(ctx, ctx->treenode_pool, MU_TREENODEPOOL_SIZE, id);
-  int width = -1;
-  mu_layout_row(ctx, 1, &width, 0);
-
-  active = (idx >= 0);
-  expanded = (opt & MU_OPT_EXPANDED) ? !active : active;
-  r = mu_layout_next(ctx);
-  mu_update_control(ctx, id, r, 0);
-
-  /* handle click */
-  active ^= (ctx->mouse_pressed == MU_MOUSE_LEFT && ctx->focus == id);
-
-  /* update pool ref */
-  if (idx >= 0) {
-    if (active) { mu_pool_update(ctx, ctx->treenode_pool, idx); }
-           else { memset(&ctx->treenode_pool[idx], 0, sizeof(mu_PoolItem)); }
-  } else if (active) {
-    mu_pool_init(ctx, ctx->treenode_pool, MU_TREENODEPOOL_SIZE, id);
-  }
-
-  /* draw */
-  if (istreenode) {
-    if (ctx->hover == id) { ctx->draw_frame(ctx, r, MU_COLOR_BUTTONHOVER); }
-  } else {
-    mu_draw_control_frame(ctx, id, r, MU_COLOR_BUTTON, 0);
-  }
-  mu_draw_icon(
-    ctx, expanded ? MU_ICON_EXPANDED : MU_ICON_COLLAPSED,
-    mu_rect(r.x, r.y, r.h, r.h), ctx->style->colors[MU_COLOR_TEXT]);
-  r.x += r.h - ctx->style->padding;
-  r.w -= r.h - ctx->style->padding;
-  mu_draw_control_text(ctx, label, r, MU_COLOR_TEXT, 0);
-
-  return expanded ? MU_RES_ACTIVE : 0;
-}
-
-/// @brief Adds a collapsible header to the current layout.
-/// @param ctx The MicroUI context.
-/// @param label The string label for the header.
-/// @param opt A bitmask of options.
-/// @return A bitmask of result flags, with `MU_RES_ACTIVE` set if the header's
-///         content is expanded and should be drawn.
-///
-/// This is a convenience function that creates a collapsible header, typically
-/// used to create expandable sections of content. It is a simple wrapper around
-/// the internal `header` function, specifically for non-tree-node headers.
-int mu_header_ex(mu_Context *ctx, const char *label, int opt) {
-  return header(ctx, label, 0, opt);
-}
-
-/// @brief Starts a new tree node.
-/// @param ctx The MicroUI context.
-/// @param label The string label for the tree node.
-/// @param opt A bitmask of options.
-/// @return A bitmask of result flags, with `MU_RES_ACTIVE` set if the tree
-///         node is expanded.
-///
-/// This function begins a new collapsible tree node. It draws the interactive
-/// header, and if the node is in its expanded state, it updates the layout's
-/// indentation and pushes the node's ID onto the ID stack. This indents all
-/// subsequent child widgets and ensures they have a unique ID scope. The return
-/// value can be used to conditionally draw the child content.
-int mu_begin_treenode_ex(mu_Context *ctx, const char *label, int opt) {
-  int res = header(ctx, label, 1, opt);
-  if (res & MU_RES_ACTIVE) {
-    get_layout(ctx)->indent += ctx->style->indent;
-    push(ctx->id_stack, ctx->last_id);
-  }
-  return res;
-}
-
-/// @brief Ends the current tree node scope.
-/// @param ctx The MicroUI context.
-///
-/// This function is the counterpart to `mu_begin_treenode_ex`. It restores the
-/// state after a tree node's content has been drawn by decreasing the layout's
-/// indentation and popping the tree node's ID from the ID stack. This ensures
-/// that subsequent widgets are placed correctly in the parent layout and have
-/// the correct ID scope.
-void mu_end_treenode(mu_Context *ctx) {
-  get_layout(ctx)->indent -= ctx->style->indent;
-  mu_pop_id(ctx);
-}
-
-void mu_init_elem(mu_Elem*elem){
-  elem->tree.count=0;
-  elem->tree.parent=-1; 
-}
-
-void mu_begin_elem_ex(mu_Context *ctx, float sizex,float sizey, mu_Dir direction,mu_Alignment alignopts) {
+void mu_begin_elem_ex(mu_Context *ctx, float sizex,float sizey, mu_Dir direction,mu_Alignment alignopts, int settings) {
   // push(ctx->element_stack,emptyelem); // THIS BREAKS THINGS
 
   int newindex=ctx->element_stack.idx++;
   mu_Elem*new_elem=&ctx->element_stack.items[newindex];
-  mu_init_elem(new_elem);
+  new_elem->tree.count=0;
+  new_elem->tree.parent=-1;
   new_elem->idx=newindex; //set element id after we pushed it
+  new_elem->border_color=mu_color(255,0,20,255);
+  new_elem->text_color=mu_color(255,25,205,255);
+
   new_elem->tier=ctx->tier++;
   if (new_elem->tier!=0){
     new_elem->tree.parent= ctx->current_parent->idx;
@@ -1655,11 +1078,15 @@ void mu_begin_elem_ex(mu_Context *ctx, float sizex,float sizey, mu_Dir direction
   new_elem->childAlignment=alignopts;
   new_elem->gap=10;
   new_elem->padding=5;
+  new_elem->settings=settings;
+  new_elem->border_color=new_elem->border_color;
   new_elem->direction=direction;
   new_elem->sizing=(mu_fVec2){sizex,sizey};
+  new_elem->clip=(mu_Rect){0,0,0,0};
+  const void *data = int_to_str(new_elem->idx);
+  const char *s = (const char *)data;  // "12345"
+  new_elem->hash=mu_get_id(ctx,s , strlen(s));
 }
-
-
 
 void mu_end_elem(mu_Context *ctx) {
   // TODO ADD FIT ALGORITHM BY ADDING UP CHILDREN SIZES
@@ -1669,8 +1096,6 @@ void mu_end_elem(mu_Context *ctx) {
 
 }
 
-
-
 void mu_resize_children(mu_Context *ctx,mu_Elem* elem) {
   if (elem->tree.count){
     float totalChildSize = 0;
@@ -1678,15 +1103,16 @@ void mu_resize_children(mu_Context *ctx,mu_Elem* elem) {
     mu_Elem* listofgrowers[elem->tree.count];
     for (int i = 0; i < elem->tree.count; i++) {
       mu_Elem* child = &ctx->element_stack.items[elem->tree.children[i]];
-
-      //HANDLE PERCENTAGE AND FIND GROWERS
+      // FIND GROWERS
       if ((child->sizing.x==0&&elem->direction==DIR_X) || (child->sizing.y==0&&elem->direction==DIR_Y))
         listofgrowers[growChildren++]=child;
-      // if sizing is set to grow across the weak axis we set it to 100%
+      // if sizing is set to grow across the weak axis we set it to PERCENTAGE
       if (elem->direction==DIR_X && child->sizing.y==0) 
         child->sizing.y=1;
       if (elem->direction==DIR_Y && child->sizing.x==0) 
         child->sizing.x=1;
+      
+      //HANDLE PERCENTAGE
       if (child->sizing.x <= 1&&child->sizing.x>0)
       {
         child->sizing.x = (child->sizing.x * elem->sizing.x); 
@@ -1698,16 +1124,20 @@ void mu_resize_children(mu_Context *ctx,mu_Elem* elem) {
         child->sizing.y -= 2*elem->padding;
         child->sizing.y -= elem->gap*(elem->tree.count-1)*((elem->direction+1)%2);//ONLY ADD GAPS TO THE ACTIVE AXIS
       }
+      //ADD TO TOTAL CHILD SIZE
       totalChildSize += child->sizing.x*((elem->direction +0)%2);
       totalChildSize += child->sizing.y*((elem->direction +1)%2);
     }
-    elem->leftoversize=totalChildSize;
-        for (int i =0;i<growChildren;i++){
+    for (int i =0;i<growChildren;i++){
         mu_Elem* child = listofgrowers[i];
         //TODO STILL HAVE TO CHECK IF MIN SIZE IS BIGGER THAN GROW SIZE
         child->sizing.x+=((elem->sizing.x - totalChildSize)/growChildren-elem->gap*(elem->tree.count-1)-elem->padding*2 )*(elem->direction);
         child->sizing.y+=((elem->sizing.y - totalChildSize)/growChildren-elem->gap*(elem->tree.count-1)-elem->padding*2 )*((elem->direction +1)%2);
+        totalChildSize+=child->sizing.x*(elem->direction);
+        totalChildSize+=child->sizing.y*((elem->direction +1)%2);
     }
+    elem->childrensize=totalChildSize;
+
   } 
 }
 
@@ -1718,8 +1148,6 @@ void mu_resize(mu_Context *ctx) {
   }
   
 }
-
-
 void mu_apply_size(mu_Context *ctx)
 {
   for (int i = 0; i < ctx->element_stack.idx; i++)
@@ -1735,6 +1163,7 @@ void mu_apply_size(mu_Context *ctx)
 }
 
 void mu_adjust_children_positions(mu_Context *ctx,mu_Elem* elem){
+  mu_push_clip_rect(ctx,elem->rect);
   if (elem->tree.count>0){
     mu_fVec2 m;
     if (elem->childAlignment & MU_ALIGN_LEFT)   m.x = 0.0f;
@@ -1743,11 +1172,9 @@ void mu_adjust_children_positions(mu_Context *ctx,mu_Elem* elem){
     if (elem->childAlignment & MU_ALIGN_TOP)    m.y = 0.0f;
     if (elem->childAlignment & MU_ALIGN_MIDDLE) m.y = 0.5f;
     if (elem->childAlignment & MU_ALIGN_BOTTOM) m.y = 1.0f;
-    // TODO FIX ALIGNS. BROKEN
     mu_Elem* child;
     int compoundx=0;
     int compoundy=0;
-    // printf("result of childalign rightalign comparison: %s", elem->childAlignment&MU_ALIGN_RIGHT);
     for (int i = 0; i < elem->tree.count; i++)  {
       child  =  &ctx->element_stack.items[elem->tree.children[i]];
       child->rect.x = elem->rect.x;
@@ -1755,29 +1182,39 @@ void mu_adjust_children_positions(mu_Context *ctx,mu_Elem* elem){
       child->rect.x += elem->padding;
       child->rect.y += elem->padding;
       if (elem->direction==DIR_X){
-        child->rect.x +=(elem->rect.w-elem->leftoversize)* m.x;
+        child->rect.x +=(elem->rect.w-elem->childrensize)* m.x;
         child->rect.x -=(2*elem->padding+(elem->tree.count-1)*elem->gap)*m.x;
         child->rect.y +=(elem->rect.h-child->rect.h)*m.y;
         child->rect.y -=(2*elem->padding)*m.y;
-
-
       } else {
         child->rect.x +=(elem->rect.w-child->rect.w)*m.x;  
         child->rect.x -=2*elem->padding*m.x;
 
-        child->rect.y +=(elem->rect.h-elem->leftoversize)* m.y;
+        child->rect.y +=(elem->rect.h-elem->childrensize)* m.y;
         child->rect.y -=(2*elem->padding+(elem->tree.count-1)*elem->gap)*m.y;
 
       }
       child->rect.x += compoundx;
       child->rect.y += compoundy;
-      
+      child->rect.x += elem->scroll.x;
+      child->rect.y += elem->scroll.y;
       compoundx     += (child->rect.w +elem->gap)*((elem->direction +0)%2);
       compoundy     += (child->rect.h +elem->gap)*((elem->direction +1)%2);
+
+      child->clip=mu_get_clip_rect(ctx);
+
+      if (child->settings&(MU_EL_CLICKABLE|MU_EL_DRAGGABLE|MU_EL_STUTTER)){
+        mu_update_element_control(ctx,child);
+      }
       mu_adjust_children_positions(ctx,child);
+
+      
     }
   }
+  mu_pop_clip_rect(ctx);
 }
+
+
 
 void mu_adjust_elem_positions(mu_Context *ctx)
 {
@@ -1790,16 +1227,96 @@ void mu_draw_debug_elems(mu_Context *ctx){
   {
     mu_Elem*elem=&ctx->element_stack.items[i];
     
-    mu_draw_debug_outline_ex(ctx, elem->rect, (mu_Color){100,190,0,255}, 3);
+    mu_draw_debug_clip_outline_ex(ctx, elem->rect, elem->clip,elem->border_color, 3);
+    if (elem->settings&MU_EL_DEBUG){
+      mu_draw_rect(ctx,elem->clip,mu_color(0,0,255,50));
+      mu_draw_rect(ctx,intersect_rects(elem->clip,elem->rect),mu_color(0,255,0,50));
+
+    }
+    
+    if (elem->text.str) {
+      mu_draw_text_ex(ctx,0,elem->text.str,sizeof(elem->text.str),mu_vec2(elem->rect.x,elem->rect.y),elem->text_color,intersect_rects(elem->clip,elem->rect),elem->rect,(mu_Alignment){MU_ALIGN_CENTER|MU_ALIGN_MIDDLE},elem->padding );
+    }
   }
 }
+
+
+void mu_handle_interaction(mu_Context *ctx){
+    for (int i = 0; i < ctx->element_stack.idx; i++)
+  {
+    mu_Elem*elem=&ctx->element_stack.items[i];
+    if (ctx->hover == elem->hash) { elem->border_color = mu_color(0,0,255,255); }
+    if (ctx->focus == elem->hash) { 
+      elem->border_color = mu_color(0,255,0,255); 
+      if(elem->settings&MU_EL_DRAGGABLE||elem->settings&MU_EL_STUTTER){
+        if (ctx->mouse_down== MU_MOUSE_LEFT){
+          elem->scroll.y+=ctx->mouse_delta.y;
+          // printf("motion");
+        }
+      }
+    }
+  }
+}
+
+
+
+void mu_handle_animation(mu_Context *ctx) {
+  for (int i = 0; i < ctx->element_stack.idx; i++){
+    mu_Elem* elem=&ctx->element_stack.items[i];
+    
+    if (elem->settings&MU_EL_DRAGGABLE&&(!(ctx->focus == elem->hash))&&(elem->scroll.x!=0||elem->scroll.y!=0)) {
+      int mov=0;
+      if (elem->direction==DIR_X){
+        int relativesize= elem->childrensize+elem->padding*2+(elem->tree.count-1)*elem->gap;
+        mov=mu_clamp(elem->scroll.x,0,elem->rect.w-relativesize);
+        mov-=elem->scroll.x;
+        elem->scroll.x+=mov*0.1;
+      } else {
+        int relativesize= elem->childrensize+elem->padding*2+(elem->tree.count-1)*elem->gap;
+        mov=mu_clamp(elem->scroll.y,elem->rect.h-relativesize,0);
+        mov-=elem->scroll.y;
+        elem->scroll.y+=mov*0.2;
+      }
+    }
+    if (elem->settings&MU_EL_STUTTER&&(!(ctx->focus == elem->hash)&&elem->cooldown)) {
+      if (elem->direction==DIR_X){
+        float mov=100000;
+        for (int i = 0; i < elem->tree.count; i++)
+        {
+          float pos=ctx->element_stack.items[elem->tree.children[i]].rect.x-elem->rect.x;
+          pos+=ctx->element_stack.items[elem->tree.children[i]].rect.w/2;
+          pos-=elem->rect.w/2;
+          mov= mu_fabsmin(pos,mov);
+        }
+        mov*=0.5;
+        if ((int)mov==0) elem->cooldown=0;
+        elem->scroll.x-=(int)mov;
+      } else {
+        float mov=100000;
+        for (int i = 0; i < elem->tree.count; i++)
+        {
+          
+          float pos=ctx->element_stack.items[elem->tree.children[i]].rect.y-elem->rect.y;
+          pos+=ctx->element_stack.items[elem->tree.children[i]].rect.h/2;
+          pos-=elem->rect.h/2;
+          mov= mu_fabsmin(pos,mov);
+        }
+        mov*=0.5;
+
+        if ((int)mov==0) elem->cooldown=0;
+        elem->scroll.y-=(int)mov;
+      }
+    }
+  }
+}
+
 
 void mu_print_debug_tree(mu_Context *ctx){
     for (int i = 0; i < ctx->element_stack.idx; i++)
   {
     mu_Elem*elem=&ctx->element_stack.items[i];
     
-    printf("ELEMENT %03d: ID %02d, x %03d, y %03d,h %03d, w %03d,  tier %03d,  number of children %d, parent %d", i, elem->idx, elem->rect.x,elem->rect.y,elem->rect.h,elem->rect.w, elem->tier, elem->tree.count,elem->tree.parent);
+    printf("ELEMENT %03d: ID %02d, hASH %d x %03d, y %03d,h %03d, w %03d,  tier %03d,  number of children %d, parent %d", i, elem->idx, elem->hash, elem->rect.x,elem->rect.y,elem->rect.h,elem->rect.w, elem->tier, elem->tree.count,elem->tree.parent);
     printf("chlidren: ");
     for (int i = 0; i < elem->tree.count; i++)
     {
@@ -1809,102 +1326,13 @@ void mu_print_debug_tree(mu_Context *ctx){
   }
 }
 
-/// @brief Adds a vertical scrollbar to a container.
-/// @param ctx The MicroUI context.
-/// @param cnt The container to be scrolled.
-/// @param b The bounding rectangle of the container's visible body.
-/// @param cs The total size of the container's content.
-/// @param x, y, w, h These are unused parameters for internal macro consistency.
-///
-/// This macro conditionally draws and handles a vertical scrollbar. It only
-/// appears if the total content height is greater than the container's body
-/// height. It manages all the scrollbar's logic, including handling mouse drag
-/// input, calculating the size and position of the thumb, and setting the
-/// container as the `scroll_target` for mouse wheel events.
-#define scrollbar(ctx, cnt, b, cs, x, y, w, h)                              \
-  do {                                                                      \
-    /* only add scrollbar if content size is larger than body */            \
-    int maxscroll = cs.y - b->h;                                            \
-                                                                            \
-    if (maxscroll > 0 && b->h > 0) {                                        \
-      mu_Rect base, thumb;                                                  \
-      mu_Id id = mu_get_id(ctx, "!scrollbar" #y, 11);                       \
-                                                                            \
-      /* get sizing / positioning */                                        \
-      base = *b;                                                            \
-      base.x = b->x + b->w;                                                 \
-      base.w = ctx->style->scrollbar_size;                                  \
-                                                                            \
-      /* handle input */                                                    \
-      mu_update_control(ctx, id, base, 0);                                  \
-      if (ctx->focus == id && ctx->mouse_down == MU_MOUSE_LEFT) {           \
-        cnt->scroll.y += ctx->mouse_delta.y * cs.y / base.h;                \
-      }                                                                     \
-      /* clamp scroll to limits */                                          \
-      cnt->scroll.y = mu_clamp(cnt->scroll.y, 0, maxscroll);                \
-                                                                            \
-      /* draw base and thumb */                                             \
-      ctx->draw_frame(ctx, base, MU_COLOR_SCROLLBASE);                      \
-      thumb = base;                                                         \
-      thumb.h = mu_max(ctx->style->thumb_size, base.h * b->h / cs.y);       \
-      thumb.y += cnt->scroll.y * (base.h - thumb.h) / maxscroll;            \
-      ctx->draw_frame(ctx, thumb, MU_COLOR_SCROLLTHUMB);                    \
-                                                                            \
-      /* set this as the scroll_target (will get scrolled on mousewheel) */ \
-      /* if the mouse is over it */                                         \
-      if (mu_mouse_over(ctx, *b)) { ctx->scroll_target = cnt; }             \
-    } else {                                                                \
-      cnt->scroll.y = 0;                                                    \
-    }                                                                       \
-  } while (0)
-
-/// @brief Adds horizontal and vertical scrollbars to a container.
-/// @param ctx The MicroUI context.
-/// @param cnt The container to which the scrollbars belong.
-/// @param body A pointer to the rectangle that defines the container's visible
-///        body area. This rectangle's dimensions may be modified to make
-///        room for the scrollbars.
-///
-/// This is a private helper function that handles the scrollbar logic for
-/// a container. It first determines whether a scrollbar is necessary by
-/// comparing the content size to the body size. If so, it adjusts the body
-/// rectangle and then invokes the `scrollbar` macro to draw and manage both the
-/// vertical and horizontal scrollbars.
-static void scrollbars(mu_Context *ctx, mu_Container *cnt, mu_Rect *body) {
-  int sz = ctx->style->scrollbar_size;
-  mu_Vec2 cs = cnt->content_size;
-  cs.x += ctx->style->padding * 2;
-  cs.y += ctx->style->padding * 2;
-  mu_push_clip_rect(ctx, *body);
-  /* resize body to make room for scrollbars */
-  if (cs.y > cnt->body.h) { body->w -= sz; }
-  if (cs.x > cnt->body.w) { body->h -= sz; }
-  /* to create a horizontal or vertical scrollbar almost-identical code is
-  ** used; only the references to `x|y` `w|h` need to be switched */
-  scrollbar(ctx, cnt, body, cs, x, y, w, h);
-  scrollbar(ctx, cnt, body, cs, y, x, h, w);
-  mu_pop_clip_rect(ctx);
+void mu_add_text_to_elem(mu_Context *ctx,const char* text) {
+  mu_Elem* elem= &ctx->element_stack.items[ctx->element_stack.idx-1];
+  elem->text.str=text;
 }
 
-/// @brief Prepares a container's body for drawing and layout.
-/// @param ctx The MicroUI context.
-/// @param cnt The container to be set up.
-/// @param body The rectangle of the container's body. This rectangle's
-///        dimensions may be modified to make room for the scrollbars.
-/// @param opt A bitmask of options, notably `MU_OPT_NOSCROLL`.
-///
-/// This private helper function is a crucial step in preparing a container's
-/// body for drawing widgets. It first checks if scrolling is enabled and
-/// calls the `scrollbars` helper function if needed, which may shrink the
-/// provided `body` rectangle. It then initializes a new layout, applying
-/// inner padding and the container's current scroll position. This ensures
-/// that all subsequent widgets are correctly positioned and clipped within
-/// the container's body.
-static void push_container_body(  mu_Context *ctx, mu_Container *cnt, mu_Rect body, int opt) {
-  if (~opt & MU_OPT_NOSCROLL) { scrollbars(ctx, cnt, &body); }
-  push_layout(ctx, expand_rect(body, -ctx->style->padding), cnt->scroll);
-  cnt->body = body;
-}
+
+
 
 /// @brief Begins a new root-level container.
 /// @param ctx The MicroUI context.
@@ -1956,109 +1384,6 @@ static void end_root_container(mu_Context *ctx) {
   pop_container(ctx);
 }
 
-/// @brief Starts a new window.
-/// @param ctx The MicroUI context.
-/// @param title The title text for the window.
-/// @param rect The initial position and size of the window.
-/// @param opt A bitmask of options. Supported flags are:
-///
-/// - `MU_OPT_NOFRAME`: Omits the background frame.
-///
-/// - `MU_OPT_NOTITLE`: Omits the title bar.
-///
-/// - `MU_OPT_NOCLOSE`: Omits the close button.
-///
-/// - `MU_OPT_NORESIZE`: Disables resizing.
-///
-/// - `MU_OPT_AUTOSIZE`: Automatically resizes to fit content.
-///
-/// - `MU_OPT_POPUP`: Makes the window a popup that closes when clicked outside.
-/// @return Returns `MU_RES_ACTIVE` if the window is open, otherwise 0.
-///
-/// This function begins a new window widget. It manages the window's state,
-/// drawing, and input. Based on the provided options, it can draw a frame, a
-/// title bar, a close button, and a resize handle. It implements features such
-/// as moving the window by dragging the title bar, resizing the window, and
-/// automatically resizing to fit its content. It also handles popup behavior.
-/// If the window is open, it prepares the body area for drawing subsequent
-/// child widgets and returns `MU_RES_ACTIVE`.
-int mu_begin_window_ex(mu_Context *ctx, const char *title, mu_Rect rect, int opt) {
-  mu_Rect body;
-  mu_Id id = mu_get_id(ctx, title, strlen(title));
-  mu_Container *cnt = get_container(ctx, id, opt);
-  if (!cnt || !cnt->open) { return 0; }
-  push(ctx->id_stack, id);
-
-  if (cnt->rect.w == 0) { cnt->rect = rect; }
-  begin_root_container(ctx, cnt);
-  rect = body = cnt->rect;
-
-  /* draw frame */
-  if (~opt & MU_OPT_NOFRAME) {
-    ctx->draw_frame(ctx, rect, MU_COLOR_WINDOWBG);
-  }
-
-  /* do title bar */
-  if (~opt & MU_OPT_NOTITLE) {
-    mu_Rect tr = rect;
-    tr.h = ctx->style->title_height;
-    ctx->draw_frame(ctx, tr, MU_COLOR_TITLEBG);
-
-    /* do title text */
-    if (~opt & MU_OPT_NOTITLE) {
-      mu_Id id = mu_get_id(ctx, "!title", 6);
-      mu_update_control(ctx, id, tr, opt);
-      mu_draw_control_text(ctx, title, tr, MU_COLOR_TITLETEXT, opt);
-      if (id == ctx->focus && ctx->mouse_down == MU_MOUSE_LEFT) {
-        cnt->rect.x += ctx->mouse_delta.x;
-        cnt->rect.y += ctx->mouse_delta.y;
-      }
-      body.y += tr.h;
-      body.h -= tr.h;
-    }
-
-    /* do `close` button */
-    if (~opt & MU_OPT_NOCLOSE) {
-      mu_Id id = mu_get_id(ctx, "!close", 6);
-      mu_Rect r = mu_rect(tr.x + tr.w - tr.h, tr.y, tr.h, tr.h);
-      tr.w -= r.w;
-      mu_draw_icon(ctx, MU_ICON_CLOSE, r, ctx->style->colors[MU_COLOR_TITLETEXT]);
-      mu_update_control(ctx, id, r, opt);
-      if (ctx->mouse_pressed == MU_MOUSE_LEFT && id == ctx->focus) {
-        cnt->open = 0;
-      }
-    }
-  }
-
-  push_container_body(ctx, cnt, body, opt);
-
-  /* do `resize` handle */
-  if (~opt & MU_OPT_NORESIZE) {
-    int sz = ctx->style->title_height;
-    mu_Id id = mu_get_id(ctx, "!resize", 7);
-    mu_Rect r = mu_rect(rect.x + rect.w - sz, rect.y + rect.h - sz, sz, sz);
-    mu_update_control(ctx, id, r, opt);
-    if (id == ctx->focus && ctx->mouse_down == MU_MOUSE_LEFT) {
-      cnt->rect.w = mu_max(96, cnt->rect.w + ctx->mouse_delta.x);
-      cnt->rect.h = mu_max(64, cnt->rect.h + ctx->mouse_delta.y);
-    }
-  }
-
-  /* resize to content size */
-  if (opt & MU_OPT_AUTOSIZE) {
-    mu_Rect r = get_layout(ctx)->body;
-    cnt->rect.w = cnt->content_size.x + (cnt->rect.w - r.w);
-    cnt->rect.h = cnt->content_size.y + (cnt->rect.h - r.h);
-  }
-
-  /* close if this is a popup window and elsewhere was clicked */
-  if (opt & MU_OPT_POPUP && ctx->mouse_pressed && ctx->hover_root != cnt) {
-    cnt->open = 0;
-  }
-
-  mu_push_clip_rect(ctx, cnt->body);
-  return MU_RES_ACTIVE;
-}
 
 int mu_begin_elem_window_ex(mu_Context *ctx, const char *title, mu_Rect rect, int opt) {
   mu_Rect body;
@@ -2066,16 +1391,14 @@ int mu_begin_elem_window_ex(mu_Context *ctx, const char *title, mu_Rect rect, in
   mu_Container *cnt = get_container(ctx, id, opt);
   if (!cnt || !cnt->open) { return 0; }
   push(ctx->id_stack, id);
+
   if (cnt->rect.w == 0) { cnt->rect = rect; }
   begin_root_container(ctx, cnt);
   rect = body = cnt->rect;
-  push_container_body(ctx, cnt, body, opt);
-  mu_push_clip_rect(ctx, cnt->body);
-  mu_begin_elem_ex(ctx,cnt->rect.w,cnt->rect.h,DIR_Y,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_LEFT));
+  mu_begin_elem_ex(ctx,cnt->rect.w,cnt->rect.h,DIR_Y,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_LEFT),0);
 
   return MU_RES_ACTIVE;
 }
-
 
 /// @brief Ends the current window scope.
 /// @param ctx The MicroUI context.
@@ -2091,110 +1414,9 @@ void mu_end_elem_window(mu_Context *ctx) {
   mu_resize(ctx);
   mu_apply_size(ctx);
   mu_adjust_elem_positions(ctx);
+  mu_handle_interaction(ctx);
+  mu_handle_animation(ctx);
   mu_draw_debug_elems(ctx);
-
-  mu_pop_clip_rect(ctx);
+  // mu_print_debug_tree(ctx);
   end_root_container(ctx);
-}
-
-void mu_end_window(mu_Context *ctx) {
-  mu_pop_clip_rect(ctx);
-  end_root_container(ctx);
-}
-
-/// @brief Opens and prepares a window as a popup.
-/// @param ctx The MicroUI context.
-/// @param name The unique name of the window to be opened as a popup.
-///
-/// This function is a utility for programmatically opening a **popup** window.
-/// It finds the window container, **positions it** at the current mouse cursor,
-/// and sets its `open` flag to true. It also sets the hover root to the popup,
-/// which is a crucial step to prevent the `MU_OPT_POPUP` window from closing
-/// itself immediately on the next frame. This function should be called just
-/// before the `mu_begin_window_ex` call that defines the popup window.
-void mu_open_popup(mu_Context *ctx, const char *name) {
-  mu_Container *cnt = mu_get_container(ctx, name);
-  /* set as hover root so popup isn't closed in begin_window_ex()  */
-  ctx->hover_root = ctx->next_hover_root = cnt;
-  /* position at mouse cursor, open and bring-to-front */
-  cnt->rect = mu_rect(ctx->mouse_pos.x, ctx->mouse_pos.y, 1, 1);
-  cnt->open = 1;
-  mu_bring_to_front(ctx, cnt);
-}
-
-/// @brief Begins a new popup window.
-/// @param ctx The MicroUI context.
-/// @param name The unique name of the popup window.
-/// @return The return value from `mu_begin_window_ex`, typically `MU_RES_ACTIVE`
-///         if the popup is currently open.
-///
-/// This is a convenience function that simplifies the creation of a standard
-/// popup window. It is a wrapper around `mu_begin_window_ex` that automatically
-/// sets the following options:
-///
-/// - `MU_OPT_POPUP`
-///
-/// - `MU_OPT_AUTOSIZE`
-///
-/// - `MU_OPT_NORESIZE`
-///
-/// - `MU_OPT_NOSCROLL`
-///
-/// - `MU_OPT_NOTITLE`
-///
-/// - `MU_OPT_CLOSED`
-///
-/// This function must be paired with `mu_end_popup` and is typically
-int mu_begin_popup(mu_Context *ctx, const char *name) {
-  int opt = MU_OPT_POPUP | MU_OPT_AUTOSIZE | MU_OPT_NORESIZE |
-            MU_OPT_NOSCROLL | MU_OPT_NOTITLE | MU_OPT_CLOSED;
-  return mu_begin_window_ex(ctx, name, mu_rect(0, 0, 0, 0), opt);
-}
-
-/// @brief Ends the current popup window scope.
-/// @param ctx The MicroUI context.
-///
-/// This function is the required counterpart to `mu_begin_popup`. It **ends**
-/// the **popup** window scope by calling `mu_end_window` to perform all
-/// the necessary finalization steps, such as restoring the clip and container
-/// stacks.
-void mu_end_popup(mu_Context *ctx) {
-  mu_end_window(ctx);
-}
-
-/// @brief Starts a new panel.
-/// @param ctx The MicroUI context.
-/// @param name The unique name for the panel.
-/// @param opt A bitmask of options. The `MU_OPT_NOFRAME` flag can be used to
-///        omit the background frame, and `MU_OPT_NOSCROLL` can be used to
-///        disable scrollbars.
-///
-/// This function starts a new **panel**, which is a basic **container** widget.
-/// Unlike a window, a panel's position and size are determined by the parent
-/// **layout** system. The function sets the ID scope for the panel, draws an
-/// optional frame, and prepares the container stack and body layout for any
-/// widgets that will be placed inside.
-void mu_begin_panel_ex(mu_Context *ctx, const char *name, int opt) {
-  mu_Container *cnt;
-  mu_push_id(ctx, name, strlen(name));
-  cnt = get_container(ctx, ctx->last_id, opt);
-  cnt->rect = mu_layout_next(ctx);
-  if (~opt & MU_OPT_NOFRAME) {
-    ctx->draw_frame(ctx, cnt->rect, MU_COLOR_PANELBG);
-  }
-  push(ctx->container_stack, cnt);
-  push_container_body(ctx, cnt, cnt->rect, opt);
-  mu_push_clip_rect(ctx, cnt->body);
-}
-
-/// @brief Ends the current panel scope.
-/// @param ctx The MicroUI context.
-///
-/// This function is the required counterpart to `mu_begin_panel_ex`. It **ends**
-/// the **panel scope** by restoring the previous clipping rectangle and returning
-/// to the **parent container** by popping the panel from the container stack.
-/// This is a crucial step for correctly managing nested layouts and ID scopes.
-void mu_end_panel(mu_Context *ctx) {
-  mu_pop_clip_rect(ctx);
-  pop_container(ctx);
 }

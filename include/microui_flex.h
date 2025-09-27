@@ -14,7 +14,6 @@ extern "C" {
 #endif
 
 
-#include <stddef.h>  // <-- needed for size_t
 
 
 #define MU_VERSION "2.02"
@@ -41,11 +40,14 @@ extern "C" {
 #define mu_min(a, b)            ((a) < (b) ? (a) : (b))
 #define mu_max(a, b)            ((a) > (b) ? (a) : (b))
 #define mu_clamp(x, a, b)       mu_min(b, mu_max(a, x))
-
+#define mu_absmin(a, b)            (abs(a) < abs(b) ? (a) : (b))
 enum {
   MU_CLIP_PART = 1,
   MU_CLIP_ALL
 };
+
+
+
 
 enum {
   MU_COMMAND_JUMP = 1,
@@ -105,6 +107,17 @@ enum {
 };
 
 enum {
+  MU_EL_CLICKABLE  = (1 << 0),
+  MU_EL_SCROLLABLE = (1 << 1),
+  MU_EL_DRAGGABLE  = (1 << 2),
+  MU_EL_DEBUG      = (1 << 3),
+  MU_EL_STUTTER    = (1 << 4),
+
+  
+};
+
+
+enum {
   MU_MOUSE_LEFT       = (1 << 0),
   MU_MOUSE_RIGHT      = (1 << 1),
   MU_MOUSE_MIDDLE     = (1 << 2)
@@ -140,7 +153,6 @@ typedef struct { float x, y; } mu_fVec2;
 typedef struct { int x, y, w, h; } mu_Rect;
 typedef struct { unsigned char r, g, b, a; } mu_Color;
 typedef struct { mu_Id id; int last_update; } mu_PoolItem;
-
 
 
 typedef struct { int type, size; } mu_BaseCommand;
@@ -210,12 +222,25 @@ typedef struct {
   mu_Dir direction;
   mu_fVec2 sizing; // 0 to 1 values are for percent. 1 to n values are for fixed, 0 is for grow,-1 is for fit.
   mu_Vec2 min; // minimum size for box
+  mu_Vec2 scroll;
   mu_Rect rect;
   mu_Tree tree;
   mu_Text text;
-  int leftoversize;
+  mu_Rect clip;
+  int childrensize;
   int idx;
-  int tier;
+  unsigned int hash;
+  signed char tier;
+  int settings;
+
+
+  signed char cooldown;
+  
+  //styling
+  mu_Color border_color;
+  mu_Color bg_color;
+  mu_Color text_color;
+  signed char bordersize;
 } mu_Elem;
 
 
@@ -283,7 +308,6 @@ struct mu_Context {
   int mouse_pressed;
   int key_down;
   int key_pressed;
-  size_t bfslist[MU_ELEMENTSTACK_SIZE];
   mu_Elem* current_parent;
 
   char input_text[32];
@@ -304,7 +328,7 @@ void mu_pop_id(mu_Context *ctx);
 void mu_push_clip_rect(mu_Context *ctx, mu_Rect rect);
 void mu_pop_clip_rect(mu_Context *ctx);
 mu_Rect mu_get_clip_rect(mu_Context *ctx);
-int mu_check_clip(mu_Context *ctx, mu_Rect r);
+int mu_check_clip_ex(mu_Rect r,mu_Rect cr);
 mu_Container* mu_get_current_container(mu_Context *ctx);
 mu_Container* mu_get_container(mu_Context *ctx, const char *name);
 void mu_bring_to_front(mu_Context *ctx, mu_Container *cnt);
@@ -325,10 +349,8 @@ mu_Command* mu_push_command(mu_Context *ctx, int type, int size);
 int mu_next_command(mu_Context *ctx, mu_Command **cmd);
 void mu_set_clip(mu_Context *ctx, mu_Rect rect);
 void mu_draw_rect(mu_Context *ctx, mu_Rect rect, mu_Color color);
-void mu_draw_debug_rect(mu_Context *ctx, mu_Rect rect, mu_Color color);
 
 void mu_draw_outline_ex(mu_Context *ctx, mu_Rect rect, mu_Color color, int t);
-void mu_draw_debug_outline_ex(mu_Context *ctx, mu_Rect rect, mu_Color color, int t);
 
 void mu_draw_text(mu_Context *ctx, mu_Font font, const char *str, int len, mu_Vec2 pos, mu_Color color);
 void mu_draw_icon(mu_Context *ctx, int id, mu_Rect rect, mu_Color color);
@@ -346,7 +368,6 @@ mu_Rect mu_layout_next(mu_Context *ctx);
 void mu_draw_control_frame(mu_Context *ctx, mu_Id id, mu_Rect rect, int colorid, int opt);
 void mu_draw_control_text(mu_Context *ctx, const char *str, mu_Rect rect, int colorid, int opt);
 int mu_mouse_over(mu_Context *ctx, mu_Rect rect);
-void mu_update_control(mu_Context *ctx, mu_Id id, mu_Rect rect, int opt);
 
 #define mu_button(ctx, label)             mu_button_ex(ctx, label, 0, MU_OPT_ALIGNCENTER)
 #define mu_textbox(ctx, buf, bufsz)       mu_textbox_ex(ctx, buf, bufsz, 0)
@@ -356,15 +377,15 @@ void mu_update_control(mu_Context *ctx, mu_Id id, mu_Rect rect, int opt);
 #define mu_begin_treenode(ctx, label)     mu_begin_treenode_ex(ctx, label, 0)
 #define mu_begin_window(ctx, title, rect) mu_begin_window_ex(ctx, title, rect, 0)
 #define mu_begin_panel(ctx, name)         mu_begin_panel_ex(ctx, name, 0)
-#define mu_begin_elem(ctx, sizex, sizey)  mu_begin_elem_ex(ctx,sizex,sizey,DIR_X,MU_ALIGN_CENTER)
+#define mu_begin_elem(ctx, sizex, sizey)  mu_begin_elem_ex(ctx,sizex,sizey,DIR_X,MU_ALIGN_CENTER,0)
+
+#define mu_check_clip(ctx, r)          mu_check_clip_ex(r,mu_get_clip_rect(ctx)) 
 
 
 #define mu_draw_outline(ctx, rect, color) mu_draw_outline_ex(ctx, rect, color,1)
 
-void mu_textelem(mu_Context *ctx, const char *text);
 void mu_label(mu_Context *ctx, const char *text);
 int mu_button_ex(mu_Context *ctx, const char *label, int icon, int opt);
-int mu_checkbox(mu_Context *ctx, const char *label, int *state);
 int mu_textbox_raw(mu_Context *ctx, char *buf, int bufsz, mu_Id id, mu_Rect r, int opt);
 int mu_textbox_ex(mu_Context *ctx, char *buf, int bufsz, int opt);
 int mu_slider_ex(mu_Context *ctx, mu_Real *value, mu_Real low, mu_Real high, mu_Real step, const char *fmt, int opt);
@@ -372,11 +393,7 @@ int mu_number_ex(mu_Context *ctx, mu_Real *value, mu_Real step, const char *fmt,
 int mu_header_ex(mu_Context *ctx, const char *label, int opt);
 int mu_begin_treenode_ex(mu_Context *ctx, const char *label, int opt);
 void mu_end_treenode(mu_Context *ctx);
-int mu_begin_window_ex(mu_Context *ctx, const char *title, mu_Rect rect, int opt);
-void mu_end_window(mu_Context *ctx);
-void mu_open_popup(mu_Context *ctx, const char *name);
-int mu_begin_popup(mu_Context *ctx, const char *name);
-void mu_end_popup(mu_Context *ctx);
+
 void mu_begin_panel_ex(mu_Context *ctx, const char *name, int opt);
 void mu_end_panel(mu_Context *ctx);
 void mu_layout_row(mu_Context *ctx, int items, const int *widths, int height);
@@ -384,7 +401,7 @@ void mu_layout_row(mu_Context *ctx, int items, const int *widths, int height);
 
 
 // FLEX  FUNCTIONS
-void mu_begin_elem_ex(mu_Context *ctx, float sizex, float sizey, mu_Dir direction,mu_Alignment alignopts);
+void mu_begin_elem_ex(mu_Context *ctx, float sizex, float sizey, mu_Dir direction,mu_Alignment alignopts, int settings);
 void mu_end_elem(mu_Context *ctx);
 void mu_resize(mu_Context *ctx);
 void mu_apply_size(mu_Context *ctx);
@@ -393,6 +410,8 @@ void mu_draw_debug_elems(mu_Context *ctx);
 void mu_print_debug_tree(mu_Context *ctx);
 int mu_begin_elem_window_ex(mu_Context *ctx, const char *title, mu_Rect rect, int opt);
 void mu_end_elem_window(mu_Context *ctx);
+void mu_handle_interaction(mu_Context *ctx);
+void mu_add_text_to_elem(mu_Context *ctx,const char* text);
 #ifdef __cplusplus
 }
 #endif

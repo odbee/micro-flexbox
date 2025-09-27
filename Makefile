@@ -6,7 +6,7 @@ CXX = g++
 # -IInclude: Look for header files in the Include directory
 # -std=c99: Enable C99 features for C files
 # -std=c++11: Enable a modern C++ standard for C++ files (or c++14, c++17, c++20)
-CFLAGS = -IInclude -Wall -Wextra -Wundef -g -O0 -std=c99
+CFLAGS = -IInclude -Wall -Wextra -Wundef -g -O0 -std=c99 -DDEBUG
 CXXFLAGS = -IInclude -Wall -Wextra -Wundef -std=c++2a
 
 # Libraries to link

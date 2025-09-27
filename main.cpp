@@ -22,32 +22,40 @@ unsigned int rightbarwidth=100;
 
 
 static void layout(mu_Context *ctx) {
-  if (mu_begin_elem_window_ex(ctx,"MAIN LAYOUT",mu_rect(0,0,800,480),MU_OPT_NOTITLE|MU_OPT_NORESIZE|MU_OPT_NOFRAME)){
-
-
-
+  if (mu_begin_elem_window_ex(ctx,"MAIN LAYOUT",mu_rect(0,0,width,height),MU_OPT_NOTITLE|MU_OPT_NORESIZE|MU_OPT_NOFRAME)){
     mu_begin_elem(ctx,0,30);
     mu_end_elem(ctx);
     
-    mu_begin_elem_ex(ctx,1,0,DIR_X,(mu_Alignment)(MU_ALIGN_BOTTOM|MU_ALIGN_LEFT));
+    mu_begin_elem_ex(ctx,1,0,DIR_X,(mu_Alignment)(MU_ALIGN_BOTTOM|MU_ALIGN_LEFT),0);
 
-      mu_begin_elem_ex(ctx,90,1,DIR_Y,(mu_Alignment)(MU_ALIGN_MIDDLE|MU_ALIGN_CENTER));
-        mu_begin_elem_ex(ctx,0.9,50,DIR_Y,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_LEFT));
+      mu_begin_elem_ex(ctx,90,1,DIR_Y,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_CENTER),0);
+        mu_begin_elem_ex(ctx,0.9,120,DIR_Y,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_LEFT),MU_EL_CLICKABLE|MU_EL_STUTTER);
+          mu_begin_elem_ex(ctx,1,80,DIR_Y,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_LEFT),0);
+            mu_add_text_to_elem(ctx,"400");
+          mu_end_elem(ctx);
+          mu_begin_elem_ex(ctx,1,80,DIR_Y,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_LEFT),0);
+            mu_add_text_to_elem(ctx,"800");
+          mu_end_elem(ctx);
+          mu_begin_elem_ex(ctx,1,80,DIR_Y,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_LEFT),MU_EL_DEBUG);
+            mu_add_text_to_elem(ctx,"1600");
+          mu_end_elem(ctx);
         mu_end_elem(ctx);
-        mu_begin_elem_ex(ctx,0.9,50,DIR_Y,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_LEFT));
+        mu_begin_elem_ex(ctx,0.9,120,DIR_Y,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_LEFT),MU_EL_CLICKABLE);
+                                    mu_add_text_to_elem(ctx,"HEY");
         mu_end_elem(ctx);  
-        mu_begin_elem_ex(ctx,0.9,50,DIR_Y,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_LEFT));
+
+        mu_begin_elem_ex(ctx,0.9,150,DIR_Y,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_LEFT),MU_EL_CLICKABLE);
+                                            mu_add_text_to_elem(ctx,"hello");
         mu_end_elem(ctx);  
-        mu_begin_elem_ex(ctx,0.9,50,DIR_Y,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_LEFT));
+        mu_begin_elem_ex(ctx,0.9,120,DIR_Y,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_LEFT),MU_EL_CLICKABLE);
         mu_end_elem(ctx);  
       mu_end_elem(ctx);
 
 
-      mu_begin_elem_ex(ctx,0,0,DIR_Y,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_LEFT));
+      mu_begin_elem_ex(ctx,0,0,DIR_Y,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_LEFT),0);
       mu_end_elem(ctx); 
 
-      mu_begin_elem_ex(ctx,90,1,DIR_Y,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_LEFT));
-
+      mu_begin_elem_ex(ctx,90,1,DIR_Y,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_LEFT),0);
       mu_end_elem(ctx); 
 
     mu_end_elem(ctx);

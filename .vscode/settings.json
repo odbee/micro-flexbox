@@ -10,6 +10,9 @@
         "begin_code.h": "c",
         "close_code.h": "c",
         "typeinfo": "c",
-        "stdlib.h": "c"
+        "stdlib.h": "c",
+        "limits": "c",
+        "corecrt_wstdlib.h": "c",
+        "sdl_opengl.h": "c"
     }
 }
