@@ -130,8 +130,8 @@ enum {
   MU_KEY_BACKSPACE    = (1 << 3),
   MU_KEY_RETURN       = (1 << 4)
 };
-
-typedef enum {
+ 
+ enum {
     MU_ALIGN_LEFT   = 1 << 0,  // 0001
     MU_ALIGN_CENTER = 1 << 1,  // 0010
     MU_ALIGN_RIGHT  = 1 << 2,  // 0100
@@ -139,7 +139,7 @@ typedef enum {
     MU_ALIGN_TOP    = 1 << 3,  // 1000
     MU_ALIGN_MIDDLE = 1 << 4,  // 1 0000
     MU_ALIGN_BOTTOM = 1 << 5   // 10 0000
-} mu_Alignment;
+};
 
 
 typedef struct mu_Context mu_Context;
@@ -195,30 +195,34 @@ typedef struct {
   const char *font;
 } mu_Text;
 
-
 typedef struct {
-  mu_Rect body;
-  mu_Rect next;
-  mu_Vec2 position;
-  mu_Vec2 size;
-  mu_Vec2 max;
-  int widths[MU_MAX_WIDTHS];
-  int items;
-  int item_index;
-  int next_row;
-  int next_type;
-  int indent;
-  mu_Bool square;
-  mu_Dir direction;
-} mu_Layout;
-
+  int id;
+  double progress, time, initial, prev;
+} mu_Animation;
 
 
 
 typedef struct {
-  mu_Alignment childAlignment;// align top, center, bottom. left middle right
-  int gap;
-  int padding;
+  //fixed styling
+
+  mu_Color border_color;
+  mu_Color bg_color;
+  
+  signed char border_size;
+  signed char gap;
+  signed char padding;
+  //text styling
+  mu_Color text_color;
+  mu_Font font;
+  int text_align;
+  //anim styling
+  mu_Color hover_color;
+  mu_Color focus_color;
+} mu_Elemstyle;
+
+
+typedef struct {
+  int childAlignment;// align top, center, bottom. left middle right
   mu_Dir direction;
   mu_fVec2 sizing; // 0 to 1 values are for percent. 1 to n values are for fixed, 0 is for grow,-1 is for fit.
   mu_Vec2 min; // minimum size for box
@@ -227,20 +231,14 @@ typedef struct {
   mu_Tree tree;
   mu_Text text;
   mu_Rect clip;
-  int childrensize;
+  int childrensize; //TOTAL SIZE OF ALL CHILDREN ELEMENTS TOGETHER (without padding or gap)
   int idx;
   unsigned int hash;
   signed char tier;
   int settings;
-
-
   signed char cooldown;
-  
-  //styling
-  mu_Color border_color;
-  mu_Color bg_color;
-  mu_Color text_color;
-  signed char bordersize;
+  mu_Elemstyle style;
+
 } mu_Elem;
 
 
@@ -274,6 +272,10 @@ struct mu_Context {
   /* core state */
   mu_Style _style;
   mu_Style *style;
+
+  mu_Elemstyle _elemstyle;
+  mu_Elemstyle *elemstyle;
+  
   mu_Id hover;
   mu_Id focus;
   mu_Id last_id;
@@ -293,12 +295,10 @@ struct mu_Context {
   mu_stack(mu_Container*, MU_CONTAINERSTACK_SIZE) container_stack;
   mu_stack(mu_Rect, MU_CLIPSTACK_SIZE) clip_stack;
   mu_stack(mu_Id, MU_IDSTACK_SIZE) id_stack;
-  mu_stack(mu_Layout, MU_LAYOUTSTACK_SIZE) layout_stack;
   mu_stack(mu_Elem, MU_ELEMENTSTACK_SIZE) element_stack;
   /* retained state pools */
   mu_PoolItem container_pool[MU_CONTAINERPOOL_SIZE];
   mu_Container containers[MU_CONTAINERPOOL_SIZE];
-  mu_PoolItem treenode_pool[MU_TREENODEPOOL_SIZE];
   /* input state */
   mu_Vec2 mouse_pos;
   mu_Vec2 last_mouse_pos;
@@ -401,7 +401,7 @@ void mu_layout_row(mu_Context *ctx, int items, const int *widths, int height);
 
 
 // FLEX  FUNCTIONS
-void mu_begin_elem_ex(mu_Context *ctx, float sizex, float sizey, mu_Dir direction,mu_Alignment alignopts, int settings);
+void mu_begin_elem_ex(mu_Context *ctx, float sizex, float sizey, mu_Dir direction,int alignopts, int settings);
 void mu_end_elem(mu_Context *ctx);
 void mu_resize(mu_Context *ctx);
 void mu_apply_size(mu_Context *ctx);
@@ -412,6 +412,7 @@ int mu_begin_elem_window_ex(mu_Context *ctx, const char *title, mu_Rect rect, in
 void mu_end_elem_window(mu_Context *ctx);
 void mu_handle_interaction(mu_Context *ctx);
 void mu_add_text_to_elem(mu_Context *ctx,const char* text);
+void mu_set_global_style(mu_Context *ctx,mu_Elemstyle style);
 #ifdef __cplusplus
 }
 #endif

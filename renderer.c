@@ -19,7 +19,6 @@ static int buf_idx;
 
 static SDL_Window *window;
 
-
 // Function to print out OpenGL error messages.
 // This function will check for all errors that might have been queued.
 void checkOpenGLError(const char* file, int line) {
@@ -51,46 +50,6 @@ void checkOpenGLError(const char* file, int line) {
 #define CHECK_GL_ERROR() checkOpenGLError(__FILE__, __LINE__)
 
 
-void r_init_gles(void) {
-  /* init SDL window */
-
-
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
-  SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-  window = SDL_CreateWindow(
-    NULL, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-    width, height, SDL_WINDOW_OPENGL | SDL_WINDOW_FULLSCREEN);
-  SDL_GL_CreateContext(window);
-
-  /* init gl */
-  glEnable(GL_BLEND);
-      CHECK_GL_ERROR();
-
-  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-  CHECK_GL_ERROR();
-  glDisable(GL_CULL_FACE);
-  CHECK_GL_ERROR();
-  glDisable(GL_DEPTH_TEST);
-  CHECK_GL_ERROR();
-  glEnable(GL_SCISSOR_TEST);
-  CHECK_GL_ERROR();
-
-  
-  
-  /* init texture */
-  GLuint id;
-  glGenTextures(1, &id);
-  glBindTexture(GL_TEXTURE_2D, id);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, ATLAS_WIDTH, ATLAS_HEIGHT, 0,
-    GL_ALPHA, GL_UNSIGNED_BYTE, atlas_texture);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-  assert(glGetError() == 0);
-}
-
-
 void r_init(void) {
   /* init SDL window */
   window = SDL_CreateWindow(
@@ -119,10 +78,24 @@ void r_init(void) {
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
   assert(glGetError() == 0);
 
+  if (TTF_Init() == -1) {
+      fprintf(stderr, "Failed to init SDL_ttf: %s\n", TTF_GetError());
+      exit(1);
+  }
 
-  
+
 }
 
+
+void r_load_font(mu_Font *font, const char* path, unsigned char size) {
+  *font = TTF_OpenFont(path, size);
+  if (!*font) {
+      fprintf(stderr, "Failed to load font: %s\n", TTF_GetError());
+      exit(1);
+  } else {
+      printf("LOADED FONT\n");
+  }
+}
 
 static void flush(void) {
   if (buf_idx == 0) { return; }
@@ -149,6 +122,42 @@ static void flush(void) {
   buf_idx = 0;
 }
 
+static void push_raw_quad(mu_Rect dst, float uv[8], mu_Color color) {
+    if (buf_idx == BUFFER_SIZE) { flush(); }
+
+    int texvert_idx = buf_idx *  8;
+    int   color_idx = buf_idx * 16;
+    int element_idx = buf_idx *  4;
+    int   index_idx = buf_idx *  6;
+    buf_idx++;
+
+    // Texture coords (already normalized)
+    memcpy(&tex_buf[texvert_idx], uv, sizeof(float) * 8);
+
+    // Vertex positions
+    vert_buf[texvert_idx + 0] = dst.x;
+    vert_buf[texvert_idx + 1] = dst.y;
+    vert_buf[texvert_idx + 2] = dst.x + dst.w;
+    vert_buf[texvert_idx + 3] = dst.y;
+    vert_buf[texvert_idx + 4] = dst.x;
+    vert_buf[texvert_idx + 5] = dst.y + dst.h;
+    vert_buf[texvert_idx + 6] = dst.x + dst.w;
+    vert_buf[texvert_idx + 7] = dst.y + dst.h;
+
+    // Colors
+    memcpy(color_buf + color_idx +  0, &color, 4);
+    memcpy(color_buf + color_idx +  4, &color, 4);
+    memcpy(color_buf + color_idx +  8, &color, 4);
+    memcpy(color_buf + color_idx + 12, &color, 4);
+
+    // Indices
+    index_buf[index_idx + 0] = element_idx + 0;
+    index_buf[index_idx + 1] = element_idx + 1;
+    index_buf[index_idx + 2] = element_idx + 2;
+    index_buf[index_idx + 3] = element_idx + 2;
+    index_buf[index_idx + 4] = element_idx + 3;
+    index_buf[index_idx + 5] = element_idx + 1;
+}
 
 static void push_quad(mu_Rect dst, mu_Rect src, mu_Color color) {
   if (buf_idx == BUFFER_SIZE) { flush(); }
@@ -204,19 +213,38 @@ void r_draw_rect(mu_Rect rect, mu_Color color) {
 }
 
 
-void r_draw_text(const char *text, mu_Vec2 pos, mu_Color color) {
-  mu_Rect dst = { pos.x, pos.y, 0, 0 };
-  for (const char *p = text; *p; p++) {
-    if ((*p & 0xc0) == 0x80) { continue; }
-    int chr = mu_min((unsigned char) *p, 127);
-    mu_Rect src = atlas[ATLAS_FONT + chr];
-    dst.w = src.w;
-    dst.h = src.h;
-    push_quad(dst, src, color);
-    dst.x += dst.w;
-  }
-}
+void r_draw_text(const char *text, mu_Font font, mu_Vec2 pos, mu_Color color) {
+    flush(); // Render pending atlas stuff first
+    if (font == NULL) {
+      // printf("FONT IS NULL, ADD FEATURE TO REVERT TO STANDARD FONT\n");
+    }
+    SDL_Color sdl_color = { color.r, color.g, color.b, color.a };
+    SDL_Surface *surface = TTF_RenderUTF8_Blended(*(TTF_Font**)font, text, sdl_color);
+    if (!surface) return;
 
+    GLuint texid;
+    glGenTextures(1, &texid);
+    glBindTexture(GL_TEXTURE_2D, texid);
+    
+    // Convert surface to ensure proper format
+    SDL_Surface *rgba_surface = SDL_ConvertSurfaceFormat(surface, SDL_PIXELFORMAT_RGBA32, 0);
+    SDL_FreeSurface(surface);
+    if (!rgba_surface) return;
+    
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, rgba_surface->w, rgba_surface->h, 0,
+                 GL_RGBA, GL_UNSIGNED_BYTE, rgba_surface->pixels);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    // UV coordinates in correct order: top-left, top-right, bottom-left, bottom-right
+    float uv[8] = { 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f };
+    mu_Rect dst = { pos.x, pos.y, rgba_surface->w, rgba_surface->h };
+    push_raw_quad(dst, uv, (mu_Color){255, 255, 255, 255});
+    
+    flush(); // Render text immediately
+    SDL_FreeSurface(rgba_surface);
+    glDeleteTextures(1, &texid);
+}
 
 void r_draw_icon(int id, mu_Rect rect, mu_Color color) {
   mu_Rect src = atlas[id];
@@ -226,19 +254,33 @@ void r_draw_icon(int id, mu_Rect rect, mu_Color color) {
 }
 
 
-int r_get_text_width(const char *text, int len) {
-  int res = 0;
-  for (const char *p = text; *p && len--; p++) {
-    if ((*p & 0xc0) == 0x80) { continue; }
-    int chr = mu_min((unsigned char) *p, 127);
-    res += atlas[ATLAS_FONT + chr].w;
-  }
-  return res;
+int r_get_text_width(mu_Font font, const char *text, int len) {
+  
+    if (!font) return 0;
+    
+    // Create null-terminated string from the given length
+    char *chars = (char *)calloc(len + 1, 1);
+    memcpy(chars, text, len);
+    
+    int width = 0;
+    int height = 0;
+    if (TTF_SizeUTF8(*(TTF_Font**)font, chars, &width, &height) < 0) {
+        fprintf(stderr, "Error: could not measure text: %s\n", TTF_GetError());
+        free(chars);
+        return 0;
+    } else {
+    }
+    
+    free(chars);
+    return width;
 }
 
+int r_get_text_height(mu_Font font) {
 
-int r_get_text_height(void) {
-  return 18;
+
+    if (!font) return 18; // fallback
+    
+    return TTF_FontHeight(*(TTF_Font**)font);
 }
 
 

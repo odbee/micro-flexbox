@@ -13,6 +13,7 @@
         "stdlib.h": "c",
         "limits": "c",
         "corecrt_wstdlib.h": "c",
-        "sdl_opengl.h": "c"
+        "sdl_opengl.h": "c",
+        "microui_flex.h": "c"
     }
 }

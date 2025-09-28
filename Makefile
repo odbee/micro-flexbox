@@ -6,13 +6,13 @@ CXX = g++
 # -IInclude: Look for header files in the Include directory
 # -std=c99: Enable C99 features for C files
 # -std=c++11: Enable a modern C++ standard for C++ files (or c++14, c++17, c++20)
-CFLAGS = -IInclude -Wall -Wextra -Wundef -g -O0 -std=c99 -DDEBUG
+CFLAGS = -IInclude -Wall -Wextra -Wundef -g -O0 -std=c99 
 CXXFLAGS = -IInclude -Wall -Wextra -Wundef -std=c++2a
 
 # Libraries to link
 # Add -lopengl32 to link against the OpenGL library
 LDFLAGS = -Lsrc/lib
-LIBS = -lmingw32 -lSDL2main -lSDL2 -lopengl32
+LIBS = -lmingw32 -lSDL2main -lSDL2 -lopengl32 -lSDL2_ttf
 
 # The name of the final executable
 TARGET = main

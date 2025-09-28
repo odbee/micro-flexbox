@@ -1,32 +1,3 @@
-/*
-** Copyright (c) 2024 rxi
-**
-** Permission is hereby granted, free of charge, to any person obtaining a copy
-** of this software and associated documentation files (the "Software"), to
-** deal in the Software without restriction, including without limitation the
-** rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
-** sell copies of the Software, and to permit persons to whom the Software is
-** furnished to do so, subject to the following conditions:
-**
-** The above copyright notice and this permission notice shall be included in
-** all copies or substantial portions of the Software.
-**
-** THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-** IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-** FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-** AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-** LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-** FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
-** IN THE SOFTWARE.
-*/
-
-
-/// important concepts
-/// - COMMANDS
-/// - LAYOUT
-/// - POOL
-
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -78,6 +49,20 @@ static mu_Style default_style = {
     { 43,  43,  43,  255 }, /* MU_COLOR_SCROLLBASE */
     { 30,  30,  30,  255 }  /* MU_COLOR_SCROLLTHUMB */
   }
+};
+
+
+static mu_Elemstyle default_elemstyle = {
+  { 230, 200, 0, 255 }, /* border_color */
+  { 20, 20, 20, 255 }, /* bg_color */
+  1,                  /* border_size */
+  5,                  /* gap */
+  5,                    /* padding */
+  { 230, 200, 0, 255 }, /* text_color */
+  NULL, /* font*/
+  10010, /* text_align*/
+  { 180, 200, 0, 255 }, /* hover_color */
+  { 130, 200, 230, 255 }, /* focus_color */
 };
 
 /// @brief Initializes and returns a new 2D vector.
@@ -139,20 +124,6 @@ mu_Color mu_color(int r, int g, int b, int a) {
   mu_Color res;
   res.r = r; res.g = g; res.b = b; res.a = a;
   return res;
-}
-
-/// @brief Expands a rectangle by a specified amount on all sides.
-///
-/// This function returns a new rectangle that is larger than the original.
-/// It increases the width and height by twice the given amount `n` and
-/// shifts the x and y coordinates to keep the original rectangle centered
-/// within the new one.
-///
-/// @param rect The original rectangle to expand.
-/// @param n The amount in pixels to expand the rectangle by on each side.
-/// @return A new, larger mu_Rect.
-static mu_Rect expand_rect(mu_Rect rect, int n) {
-  return mu_rect(rect.x - n, rect.y - n, rect.w + n * 2, rect.h + n * 2);
 }
 
 /// @brief Calculates the intersection of two rectangles.
@@ -222,6 +193,9 @@ void mu_init(mu_Context *ctx) {
   ctx->draw_frame = draw_frame;
   ctx->_style = default_style;
   ctx->style = &ctx->_style;
+  ctx->_elemstyle = default_elemstyle;
+  ctx->elemstyle = &ctx->_elemstyle;
+  
   ctx->tier=0;
 
 
@@ -239,7 +213,6 @@ void mu_begin(mu_Context *ctx) {
   ctx->root_list.idx = 0;
   ctx->element_stack.idx=0;
   ctx->current_parent=NULL;
-  ctx->scroll_target = NULL;
   ctx->hover_root = ctx->next_hover_root;
   ctx->next_hover_root = NULL;
   ctx->mouse_delta.x = ctx->mouse_pos.x - ctx->last_mouse_pos.x;
@@ -262,16 +235,10 @@ void mu_end(mu_Context *ctx) {
   expect(ctx->container_stack.idx == 0);
   expect(ctx->clip_stack.idx      == 0);
   expect(ctx->id_stack.idx        == 0);
-  expect(ctx->layout_stack.idx    == 0);
 
-  /* handle scroll input */
-  if (ctx->scroll_target) { //TODO CHECK SCROLL TARGET
-    ctx->scroll_target->scroll.x += ctx->scroll_delta.x;
-    ctx->scroll_target->scroll.y += ctx->scroll_delta.y;
-  }
 
   /* unset focus if focus id was not touched this frame */
-  if (!ctx->updated_focus) { ctx->focus = 0; }//TODO CHECK FOCUS
+  if (!ctx->updated_focus) { ctx->focus = 0; }
   ctx->updated_focus = 0;
 
   // TODO EDIT FOR ADDING TOUCH INPUT
@@ -355,7 +322,7 @@ static void hash(mu_Id *hash, const void *data, int size) {
 /// element IDs are unique within their hierarchical context. 
 /// @warning If multiple root-level elements are given the same name, they will
 ///          generate identical IDs, which can lead to unpredictable behavior.
-mu_Id mu_get_id(mu_Context *ctx, const void *data, int size) { //TODO CHECK WHAT IDS ARE FORE
+mu_Id mu_get_id(mu_Context *ctx, const void *data, int size) { 
   int idx = ctx->id_stack.idx;
   mu_Id res = (idx > 0) ? ctx->id_stack.items[idx - 1] : HASH_INITIAL;
   hash(&res, data, size);
@@ -363,17 +330,6 @@ mu_Id mu_get_id(mu_Context *ctx, const void *data, int size) { //TODO CHECK WHAT
   return res;
 }
 
-/// @brief Pushes a new ID onto the ID stack.
-/// @param ctx The MicroUI context.
-/// @param data A pointer to the data to hash for the new ID.
-/// @param size The size of the data in bytes.
-///
-/// This function generates a new ID by hashing the provided data and combining
-/// it with the current parent ID, then pushes it onto the stack. All subsequent
-/// IDs will be children of this new ID.
-void mu_push_id(mu_Context *ctx, const void *data, int size) {
-  push(ctx->id_stack, mu_get_id(ctx, data, size));
-}
 
 /// @brief Pops an ID from the ID stack.
 /// @param ctx The MicroUI context.
@@ -443,15 +399,6 @@ int mu_check_clip_ex(mu_Rect r, mu_Rect cr) {
 
 
 
-/// @brief Returns a pointer to the current layout on the stack.
-/// @param ctx The MicroUI context.
-/// @return A pointer to the top-most mu_Layout on the stack.
-///
-/// This function provides access to the currently active layout for reading
-/// and updating its properties. 
-static mu_Layout* get_layout(mu_Context *ctx) {
-  return &ctx->layout_stack.items[ctx->layout_stack.idx - 1];
-}
 
 
 /// @brief Finalizes and ends the scope of the current container.
@@ -466,10 +413,7 @@ static mu_Layout* get_layout(mu_Context *ctx) {
 /// used to correctly render scrollbars and for auto-sizing the container
 /// to fit its content.
 static void pop_container(mu_Context *ctx) {
-  mu_Container *cnt = mu_get_current_container(ctx);
-  mu_Layout *layout = get_layout(ctx);
-  cnt->content_size.x = layout->max.x - layout->body.x;
-  cnt->content_size.y = layout->max.y - layout->body.y;
+
   /* pop container, layout and id */
   pop(ctx->container_stack);
   // pop(ctx->layout_stack);
@@ -824,7 +768,7 @@ void mu_draw_text(mu_Context *ctx, mu_Font font, const char *str, int len,
 
 
 void mu_draw_text_ex(mu_Context *ctx, mu_Font font, const char *str, int len,
-  mu_Vec2 pos, mu_Color color, mu_Rect clip,mu_Rect parent,mu_Alignment textAlignment,int padding)
+  mu_Vec2 pos, mu_Color color, mu_Rect clip,mu_Rect parent,int textAlignment,int padding)
 {
 
   mu_Command *cmd;
@@ -845,10 +789,11 @@ void mu_draw_text_ex(mu_Context *ctx, mu_Font font, const char *str, int len,
     pos.x, pos.y, ctx->text_width(font, str, len), ctx->text_height(font));
   int clipped = mu_check_clip_ex(rect, clip);
   // printf("checking clip of text %s in rect %d %d %d %d against clip: %d %d %d %d. returned %d \n ", str,rect.x,rect.y,rect.w,rect.h,clip.x,clip.y,clip.w,clip.h,clipped);
-  mu_draw_rect(ctx,rect,mu_color(255,0,0,50));
+  // mu_draw_rect(ctx,rect,mu_color(255,0,0,50));
 
   if (clipped == MU_CLIP_ALL ) { return; }
   /* add command */
+  if (clipped == MU_CLIP_PART) { mu_set_clip(ctx, clip); }
 
   if (len < 0) { len = strlen(str); }
   cmd = mu_push_command(ctx, MU_COMMAND_TEXT, sizeof(mu_TextCommand) + len);
@@ -899,25 +844,6 @@ enum { RELATIVE = 1, ABSOLUTE = 2 };
 ** controls
 **============================================================================*/
 
-/// @brief Checks if the current container is within the hover root's hierarchy.
-/// @param ctx The MicroUI context.
-/// @return Returns 1 if the current container or its parent is the hover root, otherwise 0.
-///
-/// This function is used for hierarchical input handling. It iterates up the
-/// container stack from the current container to determine if the `hover_root`
-/// is one of its ancestors. The search is optimized to stop early if it
-/// encounters a different root container, correctly handling the case of
-/// multiple overlapping windows.
-static int in_hover_root(mu_Context *ctx) {
-  int i = ctx->container_stack.idx;
-  while (i--) {
-    if (ctx->container_stack.items[i] == ctx->hover_root) { return 1; }
-    /* only root containers have their `head` field set; stop searching if we've
-    ** reached the current root container */
-    if (ctx->container_stack.items[i]->head) { break; }
-  }
-  return 0;
-}
 
 /// @brief Adds a command to draw the (optional) frame for a control.
 /// @param ctx The MicroUI context.
@@ -942,37 +868,7 @@ void mu_draw_control_frame(mu_Context *ctx, mu_Id id, mu_Rect rect,
 
 
 
-/// @brief Adds a command to draw text within a control.
-/// @param ctx The MicroUI context.
-/// @param str The string to draw.
-/// @param rect The bounding rectangle of the control.
-/// @param colorid The ID of the color to use for the text.
-/// @param opt A bitmask of options, such as MU_OPT_ALIGNCENTER or MU_OPT_ALIGNRIGHT.
-///
-/// This function queues a text drawing command, handling the necessary clipping
-/// and positioning. It first sets a temporary clipping rectangle to the control's
-/// bounds to prevent the text from being drawn outside. It then calculates the
-/// text's position based on the specified alignment options before drawing.
-/// The original clipping rectangle is restored after the drawing command is queued.
-void mu_draw_control_text(mu_Context *ctx, const char *str, mu_Rect rect,
-  int colorid, int opt)
-{
-  mu_Vec2 pos;
-  mu_Font font = ctx->style->font;
-  int tw = ctx->text_width(font, str, -1);
-  mu_push_clip_rect(ctx, rect);
-  pos.y = rect.y + (rect.h - ctx->text_height(font)) / 2;
-  if (opt & MU_OPT_ALIGNCENTER) {
-    pos.x = rect.x + (rect.w - tw) / 2;
-  } else if (opt & MU_OPT_ALIGNRIGHT) {
-    pos.x = rect.x + rect.w - tw - ctx->style->padding;
-  } else {
-    pos.x = rect.x + ctx->style->padding;
-  }
 
-  mu_draw_text(ctx, font, str, -1, pos, ctx->style->colors[colorid]);
-  mu_pop_clip_rect(ctx);
-}
 
 /// @brief Checks if the mouse is currently hovering over a rectangle.
 /// @param ctx The MicroUI context.
@@ -987,8 +883,7 @@ void mu_draw_control_text(mu_Context *ctx, const char *str, mu_Rect rect,
 ///   another window or container.
 int mu_mouse_over(mu_Context *ctx, mu_Rect rect) {
   return rect_overlaps_vec2(rect, ctx->mouse_pos) &&
-    rect_overlaps_vec2(mu_get_clip_rect(ctx), ctx->mouse_pos) &&
-    in_hover_root(ctx);
+    rect_overlaps_vec2(mu_get_clip_rect(ctx), ctx->mouse_pos);
 }
 
 
@@ -1056,41 +951,47 @@ const char *int_to_str(int value) {
 
 
 
-void mu_begin_elem_ex(mu_Context *ctx, float sizex,float sizey, mu_Dir direction,mu_Alignment alignopts, int settings) {
+void mu_begin_elem_ex(mu_Context *ctx, float sizex,float sizey, mu_Dir direction,int alignopts, int settings) {
   // push(ctx->element_stack,emptyelem); // THIS BREAKS THINGS
 
   int newindex=ctx->element_stack.idx++;
   mu_Elem*new_elem=&ctx->element_stack.items[newindex];
+    // fill with values
+
   new_elem->tree.count=0;
   new_elem->tree.parent=-1;
   new_elem->idx=newindex; //set element id after we pushed it
-  new_elem->border_color=mu_color(255,0,20,255);
-  new_elem->text_color=mu_color(255,25,205,255);
-
+  new_elem->style=*ctx->elemstyle;
   new_elem->tier=ctx->tier++;
-  if (new_elem->tier!=0){
-    new_elem->tree.parent= ctx->current_parent->idx;
-    ctx->current_parent->tree.children[ctx->current_parent->tree.count++]=new_elem->idx;
-  } {
-    ctx->current_parent=new_elem;
-  }
-  // fill with standard values
   new_elem->childAlignment=alignopts;
-  new_elem->gap=10;
-  new_elem->padding=5;
   new_elem->settings=settings;
-  new_elem->border_color=new_elem->border_color;
   new_elem->direction=direction;
   new_elem->sizing=(mu_fVec2){sizex,sizey};
   new_elem->clip=(mu_Rect){0,0,0,0};
   const void *data = int_to_str(new_elem->idx);
   const char *s = (const char *)data;  // "12345"
   new_elem->hash=mu_get_id(ctx,s , strlen(s));
+
+  if (new_elem->tier!=0){
+    new_elem->tree.parent= ctx->current_parent->idx;
+    ctx->current_parent->tree.children[ctx->current_parent->tree.count++]=new_elem->idx;
+  } {
+    ctx->current_parent=new_elem;
+  }
+
 }
 
 void mu_end_elem(mu_Context *ctx) {
   // TODO ADD FIT ALGORITHM BY ADDING UP CHILDREN SIZES
-  // pop(ctx->element_stack);
+  mu_Elem*new_elem=&ctx->element_stack.items[ctx->element_stack.idx-1];
+  if (new_elem->sizing.x==-1) {
+    if (new_elem->text.str) {
+      new_elem->sizing.x=(float)ctx->text_width(new_elem->style.font,new_elem->text.str,-1);
+    }
+  } else if (new_elem->sizing.y==-1) {
+      new_elem->sizing.y=ctx->text_height(new_elem->style.font);
+
+  }
   ctx->tier--;
   ctx->current_parent = &ctx->element_stack.items[ctx->current_parent->tree.parent];
 
@@ -1116,23 +1017,24 @@ void mu_resize_children(mu_Context *ctx,mu_Elem* elem) {
       if (child->sizing.x <= 1&&child->sizing.x>0)
       {
         child->sizing.x = (child->sizing.x * elem->sizing.x); 
-        child->sizing.x -= 2*elem->padding;
-        child->sizing.x -= elem->gap*(elem->tree.count-1)*(elem->direction); //ONLY ADD GAPS TO THE ACTIVE AXIS
+        child->sizing.x -= 2*elem->style.padding;
+        child->sizing.x -= elem->style.gap*(elem->tree.count-1)*(elem->direction); //ONLY ADD GAPS TO THE ACTIVE AXIS
       }
       if (child->sizing.y <= 1&&child->sizing.y>0){
         child->sizing.y = (child->sizing.y * elem->sizing.y);
-        child->sizing.y -= 2*elem->padding;
-        child->sizing.y -= elem->gap*(elem->tree.count-1)*((elem->direction+1)%2);//ONLY ADD GAPS TO THE ACTIVE AXIS
+        child->sizing.y -= 2*elem->style.padding;
+        child->sizing.y -= elem->style.gap*(elem->tree.count-1)*((elem->direction+1)%2);//ONLY ADD GAPS TO THE ACTIVE AXIS
       }
       //ADD TO TOTAL CHILD SIZE
       totalChildSize += child->sizing.x*((elem->direction +0)%2);
       totalChildSize += child->sizing.y*((elem->direction +1)%2);
     }
-    for (int i =0;i<growChildren;i++){
-        mu_Elem* child = listofgrowers[i];
+    float adjustsize=totalChildSize;
+    for (int j =0;j<growChildren;j++){
+        mu_Elem* child = listofgrowers[j];
         //TODO STILL HAVE TO CHECK IF MIN SIZE IS BIGGER THAN GROW SIZE
-        child->sizing.x+=((elem->sizing.x - totalChildSize)/growChildren-elem->gap*(elem->tree.count-1)-elem->padding*2 )*(elem->direction);
-        child->sizing.y+=((elem->sizing.y - totalChildSize)/growChildren-elem->gap*(elem->tree.count-1)-elem->padding*2 )*((elem->direction +1)%2);
+        child->sizing.x+=((elem->sizing.x - adjustsize-elem->style.gap*(elem->tree.count-1)-elem->style.padding*2)/growChildren )*(elem->direction);
+        child->sizing.y+=((elem->sizing.y - adjustsize)/growChildren-elem->style.gap*(elem->tree.count-1)-elem->style.padding*2 )*((elem->direction +1)%2);
         totalChildSize+=child->sizing.x*(elem->direction);
         totalChildSize+=child->sizing.y*((elem->direction +1)%2);
     }
@@ -1179,27 +1081,27 @@ void mu_adjust_children_positions(mu_Context *ctx,mu_Elem* elem){
       child  =  &ctx->element_stack.items[elem->tree.children[i]];
       child->rect.x = elem->rect.x;
       child->rect.y = elem->rect.y;
-      child->rect.x += elem->padding;
-      child->rect.y += elem->padding;
+      child->rect.x += elem->style.padding;
+      child->rect.y += elem->style.padding;
       if (elem->direction==DIR_X){
         child->rect.x +=(elem->rect.w-elem->childrensize)* m.x;
-        child->rect.x -=(2*elem->padding+(elem->tree.count-1)*elem->gap)*m.x;
+        child->rect.x -=(2*elem->style.padding+(elem->tree.count-1)*elem->style.gap)*m.x;
         child->rect.y +=(elem->rect.h-child->rect.h)*m.y;
-        child->rect.y -=(2*elem->padding)*m.y;
+        child->rect.y -=(2*elem->style.padding)*m.y;
       } else {
         child->rect.x +=(elem->rect.w-child->rect.w)*m.x;  
-        child->rect.x -=2*elem->padding*m.x;
+        child->rect.x -=2*elem->style.padding*m.x;
 
         child->rect.y +=(elem->rect.h-elem->childrensize)* m.y;
-        child->rect.y -=(2*elem->padding+(elem->tree.count-1)*elem->gap)*m.y;
+        child->rect.y -=(2*elem->style.padding+(elem->tree.count-1)*elem->style.gap)*m.y;
 
       }
       child->rect.x += compoundx;
       child->rect.y += compoundy;
       child->rect.x += elem->scroll.x;
       child->rect.y += elem->scroll.y;
-      compoundx     += (child->rect.w +elem->gap)*((elem->direction +0)%2);
-      compoundy     += (child->rect.h +elem->gap)*((elem->direction +1)%2);
+      compoundx     += (child->rect.w +elem->style.gap)*((elem->direction +0)%2);
+      compoundy     += (child->rect.h +elem->style.gap)*((elem->direction +1)%2);
 
       child->clip=mu_get_clip_rect(ctx);
 
@@ -1227,7 +1129,7 @@ void mu_draw_debug_elems(mu_Context *ctx){
   {
     mu_Elem*elem=&ctx->element_stack.items[i];
     
-    mu_draw_debug_clip_outline_ex(ctx, elem->rect, elem->clip,elem->border_color, 3);
+    mu_draw_debug_clip_outline_ex(ctx, elem->rect, elem->clip,elem->style.border_color, elem->style.border_size);
     if (elem->settings&MU_EL_DEBUG){
       mu_draw_rect(ctx,elem->clip,mu_color(0,0,255,50));
       mu_draw_rect(ctx,intersect_rects(elem->clip,elem->rect),mu_color(0,255,0,50));
@@ -1235,7 +1137,7 @@ void mu_draw_debug_elems(mu_Context *ctx){
     }
     
     if (elem->text.str) {
-      mu_draw_text_ex(ctx,0,elem->text.str,sizeof(elem->text.str),mu_vec2(elem->rect.x,elem->rect.y),elem->text_color,intersect_rects(elem->clip,elem->rect),elem->rect,(mu_Alignment){MU_ALIGN_CENTER|MU_ALIGN_MIDDLE},elem->padding );
+      mu_draw_text_ex(ctx,elem->style.font,elem->text.str,sizeof(elem->text.str),mu_vec2(elem->rect.x,elem->rect.y),elem->style.text_color,intersect_rects(elem->clip,elem->rect),elem->rect,elem->style.text_align,elem->style.padding );
     }
   }
 }
@@ -1245,9 +1147,9 @@ void mu_handle_interaction(mu_Context *ctx){
     for (int i = 0; i < ctx->element_stack.idx; i++)
   {
     mu_Elem*elem=&ctx->element_stack.items[i];
-    if (ctx->hover == elem->hash) { elem->border_color = mu_color(0,0,255,255); }
+    if (ctx->hover == elem->hash) { elem->style.border_color = mu_color(0,0,255,255); }
     if (ctx->focus == elem->hash) { 
-      elem->border_color = mu_color(0,255,0,255); 
+      elem->style.border_color = mu_color(0,255,0,255); 
       if(elem->settings&MU_EL_DRAGGABLE||elem->settings&MU_EL_STUTTER){
         if (ctx->mouse_down== MU_MOUSE_LEFT){
           elem->scroll.y+=ctx->mouse_delta.y;
@@ -1267,12 +1169,12 @@ void mu_handle_animation(mu_Context *ctx) {
     if (elem->settings&MU_EL_DRAGGABLE&&(!(ctx->focus == elem->hash))&&(elem->scroll.x!=0||elem->scroll.y!=0)) {
       int mov=0;
       if (elem->direction==DIR_X){
-        int relativesize= elem->childrensize+elem->padding*2+(elem->tree.count-1)*elem->gap;
+        int relativesize= elem->childrensize+elem->style.padding*2+(elem->tree.count-1)*elem->style.gap;
         mov=mu_clamp(elem->scroll.x,0,elem->rect.w-relativesize);
         mov-=elem->scroll.x;
         elem->scroll.x+=mov*0.1;
       } else {
-        int relativesize= elem->childrensize+elem->padding*2+(elem->tree.count-1)*elem->gap;
+        int relativesize= elem->childrensize+elem->style.padding*2+(elem->tree.count-1)*elem->style.gap;
         mov=mu_clamp(elem->scroll.y,elem->rect.h-relativesize,0);
         mov-=elem->scroll.y;
         elem->scroll.y+=mov*0.2;
@@ -1395,7 +1297,7 @@ int mu_begin_elem_window_ex(mu_Context *ctx, const char *title, mu_Rect rect, in
   if (cnt->rect.w == 0) { cnt->rect = rect; }
   begin_root_container(ctx, cnt);
   rect = body = cnt->rect;
-  mu_begin_elem_ex(ctx,cnt->rect.w,cnt->rect.h,DIR_Y,(mu_Alignment)(MU_ALIGN_TOP|MU_ALIGN_LEFT),0);
+  mu_begin_elem_ex(ctx,cnt->rect.w,cnt->rect.h,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),0);
 
   return MU_RES_ACTIVE;
 }
