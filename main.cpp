@@ -22,7 +22,7 @@ unsigned int rightbarwidth=100;
 
 mu_Font q_font;
 
-static mu_Elemstyle newstyle = {
+static mu_Animatable newstyle = {
 
   { 230, 200, 0, 255 }, /* border_color */
   { 20, 20, 20, 255 },  /* bg_color */
@@ -34,9 +34,10 @@ static mu_Elemstyle newstyle = {
   MU_ALIGN_MIDDLE|MU_ALIGN_CENTER, /* text_align*/
   { 180, 200, 0, 255 }, /* hover_color */
   { 130, 200, 230, 255 }, /* focus_color */
+  {0,0}
 };
 
-static mu_Elemstyle itemstyle = {
+static mu_Animatable itemstyle = {
 
   { 230, 200, 0, 0 }, /* border_color */
   { 20, 20, 20, 255 },  /* bg_color */
@@ -51,7 +52,7 @@ static mu_Elemstyle itemstyle = {
   { 130, 200, 230, 255 }, /* focus_color */
 };
 
-static mu_Elemstyle isostyle = {
+static mu_Animatable isostyle = {
 
   { 230, 200, 0, 255 }, /* border_color */
   { 20, 20, 20, 255 },  /* bg_color */
@@ -65,6 +66,26 @@ static mu_Elemstyle isostyle = {
   { 180, 200, 0, 255 }, /* hover_color */
   { 130, 200, 230, 255 }, /* focus_color */
 };
+
+
+
+
+void cooldown(mu_Elem* elem) {
+      int mov=0;
+      if (elem->direction==DIR_X){
+        int relativesize= elem->childrensize+elem->style.padding*2+(elem->tree.count-1)*elem->style.gap;
+        mov=mu_clamp(elem->style.scroll.x,0,elem->rect.w-relativesize);
+        // mu_animation_start(elem->hash,);
+      } else {
+        int relativesize= elem->childrensize+elem->style.padding*2+(elem->tree.count-1)*elem->style.gap;
+        mov=mu_clamp(elem->style.scroll.y,elem->rect.h-relativesize,0);
+        mov-=elem->style.scroll.y;
+
+      }
+    
+}
+
+
 static void layout(mu_Context *ctx) {
   
   if (mu_begin_elem_window_ex(ctx,"MAIN LAYOUT",mu_rect(0,0,width,height),MU_OPT_NOTITLE|MU_OPT_NORESIZE|MU_OPT_NOFRAME)){
@@ -86,9 +107,15 @@ static void layout(mu_Context *ctx) {
     mu_end_elem(ctx);
     mu_begin_elem_ex(ctx,1,0,DIR_X,(MU_ALIGN_BOTTOM|MU_ALIGN_LEFT),0);
       mu_begin_elem_ex(ctx,90,1,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_CENTER),0);
-        ctx->elemstyle=&isostyle;
-        mu_begin_elem_ex(ctx,0.9,80,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),MU_EL_CLICKABLE|MU_EL_STUTTER);
-          ctx->elemstyle=&itemstyle;
+
+        ctx->animatable=&isostyle;
+        switch(mu_begin_elem_ex(ctx,0.9,80,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),MU_EL_CLICKABLE|MU_EL_STUTTER)){
+          case MU_STATE_UNFOCUSED:
+            printf("UNFOCUSED\n");
+            mu_animation_set(ctx,cooldown);
+            break;
+        }
+          ctx->animatable=&itemstyle;
 
           mu_add_text_to_elem(ctx,"ISO");
           mu_begin_elem_ex(ctx,1,30,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),0);
@@ -99,7 +126,7 @@ static void layout(mu_Context *ctx) {
           mu_end_elem(ctx);
           mu_begin_elem_ex(ctx,1,30,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),0);
             mu_add_text_to_elem(ctx,"1600");
-            ctx->elemstyle=&newstyle;
+            ctx->animatable=&newstyle;
 
           mu_end_elem(ctx);
         mu_end_elem(ctx);
@@ -133,8 +160,8 @@ static void layout(mu_Context *ctx) {
 
 
 static void process_frame(mu_Context *ctx) {
+  
   mu_begin(ctx);
-
   layout(ctx);
   mu_end(ctx);
 }
@@ -186,7 +213,7 @@ int main (int argc, char *argv[]) {
       /* init microui */
     mu_Context *ctx =(mu_Context*) malloc(sizeof(mu_Context));
     mu_init(ctx);
-    ctx->elemstyle=&newstyle;
+    ctx->animatable=&newstyle;
     ctx->text_width = text_width;
     ctx->text_height = text_height;
 

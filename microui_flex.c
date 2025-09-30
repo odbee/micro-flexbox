@@ -52,7 +52,7 @@ static mu_Style default_style = {
 };
 
 
-static mu_Elemstyle default_elemstyle = {
+static mu_Animatable default_animatable = {
   { 230, 200, 0, 255 }, /* border_color */
   { 20, 20, 20, 255 }, /* bg_color */
   1,                  /* border_size */
@@ -63,6 +63,7 @@ static mu_Elemstyle default_elemstyle = {
   10010, /* text_align*/
   { 180, 200, 0, 255 }, /* hover_color */
   { 130, 200, 230, 255 }, /* focus_color */
+  {0,0}
 };
 
 /// @brief Initializes and returns a new 2D vector.
@@ -193,8 +194,8 @@ void mu_init(mu_Context *ctx) {
   ctx->draw_frame = draw_frame;
   ctx->_style = default_style;
   ctx->style = &ctx->_style;
-  ctx->_elemstyle = default_elemstyle;
-  ctx->elemstyle = &ctx->_elemstyle;
+  ctx->_animatable = default_animatable;
+  ctx->animatable = &ctx->_animatable;
   
   ctx->tier=0;
 
@@ -236,10 +237,14 @@ void mu_end(mu_Context *ctx) {
   expect(ctx->clip_stack.idx      == 0);
   expect(ctx->id_stack.idx        == 0);
 
+  /* STORE TIME*/
+  ctx->dt = (SDL_GetTicks() - ctx->last_time) / 1000.0;
+  ctx->last_time = SDL_GetTicks();
+
 
   /* unset focus if focus id was not touched this frame */
-  if (!ctx->updated_focus) { ctx->focus = 0; }
-  ctx->updated_focus = 0;
+  // if (!ctx->updated_focus) { ctx->focus = 0; }
+  // ctx->updated_focus = 0;
 
   // TODO EDIT FOR ADDING TOUCH INPUT
   /* bring hover root to front if mouse was pressed */
@@ -256,7 +261,7 @@ void mu_end(mu_Context *ctx) {
   ctx->mouse_pressed = 0;
   ctx->scroll_delta = mu_vec2(0, 0);
   ctx->last_mouse_pos = ctx->mouse_pos;
-
+  
   /* sort root containers by zindex */
   n = ctx->root_list.idx;
 
@@ -898,24 +903,40 @@ int mu_mouse_over(mu_Context *ctx, mu_Rect rect) {
 /// changes. The `MU_OPT_HOLDFOCUS` option is also handled, which allows a
 /// control to retain focus even when the mouse button is released.
 void mu_update_element_control(mu_Context *ctx, mu_Elem* elem) {
+  ctx->updated_focus = 0;
+
   unsigned int id = elem->hash;
   mu_Rect rect = elem->rect;
-  int opt =0;
   int mouseover = mu_mouse_over(ctx, rect);
-
-  if (ctx->focus == id) { ctx->updated_focus = 1;}
-  if (opt & MU_OPT_NOINTERACT) { return; }
-  if (mouseover && !ctx->mouse_down) { ctx->hover = id; }
-
+  elem->state=MU_STATE_ACTIVE;
   if (ctx->focus == id) {
-    if (ctx->mouse_pressed && !mouseover) { mu_set_focus(ctx, 0); }
-    if (!ctx->mouse_down && ~opt & MU_OPT_HOLDFOCUS) { mu_set_focus(ctx, 0);elem->cooldown=1; }
+    ctx->updated_focus = 1;
+    elem->state=MU_STATE_FOCUSED;// this means its still focused from last frame
+    if (ctx->mouse_pressed && !mouseover) { // no longer over object but still down
+      mu_set_focus(ctx, 0);
+      elem->state=MU_STATE_FOCUSED;
+    }
+    if (!ctx->mouse_down) { // no longer clicking
+      mu_set_focus(ctx, 0);
+      printf("NO LONGER FOCUSING\n");
+      elem->state=MU_STATE_UNFOCUSED;
+      elem->cooldown=1;
+    }
   }
-  if (ctx->hover == id) {
-    if (ctx->mouse_pressed) {
+  if (mouseover && !ctx->mouse_down) { //TO HOVER WE NEED TO BE !MOUSEDOWN
+    ctx->hover = id;
+    elem->state=MU_STATE_JUSTHOVERED;
+    
+  }
+
+  if (ctx->hover == id) { 
+    elem->state=MU_STATE_HOVERED;
+    if (ctx->mouse_pressed) {// TO TOGGLE FOCUS WE NEED TO BE HOVERED FIRST
       mu_set_focus(ctx, id);
-    } else if (!mouseover) {
+      elem->state=MU_STATE_JUSTFOCUSED;
+    } else if (!mouseover) { //this means was hovered last frame and is no longer
       ctx->hover = 0;
+      elem->state=MU_STATE_UNHOVERED;
     }
   }
 }
@@ -951,7 +972,7 @@ const char *int_to_str(int value) {
 
 
 
-void mu_begin_elem_ex(mu_Context *ctx, float sizex,float sizey, mu_Dir direction,int alignopts, int settings) {
+int mu_begin_elem_ex(mu_Context *ctx, float sizex,float sizey, mu_Dir direction,int alignopts, int settings) {
   // push(ctx->element_stack,emptyelem); // THIS BREAKS THINGS
 
   int newindex=ctx->element_stack.idx++;
@@ -961,7 +982,7 @@ void mu_begin_elem_ex(mu_Context *ctx, float sizex,float sizey, mu_Dir direction
   new_elem->tree.count=0;
   new_elem->tree.parent=-1;
   new_elem->idx=newindex; //set element id after we pushed it
-  new_elem->style=*ctx->elemstyle;
+  new_elem->style=*ctx->animatable;
   new_elem->tier=ctx->tier++;
   new_elem->childAlignment=alignopts;
   new_elem->settings=settings;
@@ -978,7 +999,11 @@ void mu_begin_elem_ex(mu_Context *ctx, float sizex,float sizey, mu_Dir direction
   } {
     ctx->current_parent=new_elem;
   }
+  if (new_elem->hash==ctx->focus){
+      printf("FOCUS ID, %d %d\n",new_elem->idx, new_elem->state);
 
+  }
+  return new_elem->state;
 }
 
 void mu_end_elem(mu_Context *ctx) {
@@ -986,10 +1011,10 @@ void mu_end_elem(mu_Context *ctx) {
   mu_Elem*new_elem=&ctx->element_stack.items[ctx->element_stack.idx-1];
   if (new_elem->sizing.x==-1) {
     if (new_elem->text.str) {
-      new_elem->sizing.x=(float)ctx->text_width(new_elem->style.font,new_elem->text.str,-1);
+      new_elem->sizing.x=(float)(ctx->text_width(new_elem->style.font,new_elem->text.str,-1)+new_elem->style.padding*2);
     }
   } else if (new_elem->sizing.y==-1) {
-      new_elem->sizing.y=ctx->text_height(new_elem->style.font);
+      new_elem->sizing.y=(float)(ctx->text_height(new_elem->style.font)+new_elem->style.padding*2);
 
   }
   ctx->tier--;
@@ -1098,8 +1123,8 @@ void mu_adjust_children_positions(mu_Context *ctx,mu_Elem* elem){
       }
       child->rect.x += compoundx;
       child->rect.y += compoundy;
-      child->rect.x += elem->scroll.x;
-      child->rect.y += elem->scroll.y;
+      child->rect.x += elem->style.scroll.x;
+      child->rect.y += elem->style.scroll.y;
       compoundx     += (child->rect.w +elem->style.gap)*((elem->direction +0)%2);
       compoundy     += (child->rect.h +elem->style.gap)*((elem->direction +1)%2);
 
@@ -1152,7 +1177,7 @@ void mu_handle_interaction(mu_Context *ctx){
       elem->style.border_color = mu_color(0,255,0,255); 
       if(elem->settings&MU_EL_DRAGGABLE||elem->settings&MU_EL_STUTTER){
         if (ctx->mouse_down== MU_MOUSE_LEFT){
-          elem->scroll.y+=ctx->mouse_delta.y;
+          elem->style.scroll.y+=ctx->mouse_delta.y;
           // printf("motion");
         }
       }
@@ -1166,18 +1191,18 @@ void mu_handle_animation(mu_Context *ctx) {
   for (int i = 0; i < ctx->element_stack.idx; i++){
     mu_Elem* elem=&ctx->element_stack.items[i];
     
-    if (elem->settings&MU_EL_DRAGGABLE&&(!(ctx->focus == elem->hash))&&(elem->scroll.x!=0||elem->scroll.y!=0)) {
+    if (elem->settings&MU_EL_DRAGGABLE&&(!(ctx->focus == elem->hash))&&(elem->style.scroll.x!=0||elem->style.scroll.y!=0)) {
       int mov=0;
       if (elem->direction==DIR_X){
         int relativesize= elem->childrensize+elem->style.padding*2+(elem->tree.count-1)*elem->style.gap;
-        mov=mu_clamp(elem->scroll.x,0,elem->rect.w-relativesize);
-        mov-=elem->scroll.x;
-        elem->scroll.x+=mov*0.1;
+        mov=mu_clamp(elem->style.scroll.x,0,elem->rect.w-relativesize);
+        mov-=elem->style.scroll.x;
+        elem->style.scroll.x+=mov*0.1;
       } else {
         int relativesize= elem->childrensize+elem->style.padding*2+(elem->tree.count-1)*elem->style.gap;
-        mov=mu_clamp(elem->scroll.y,elem->rect.h-relativesize,0);
-        mov-=elem->scroll.y;
-        elem->scroll.y+=mov*0.2;
+        mov=mu_clamp(elem->style.scroll.y,elem->rect.h-relativesize,0);
+        mov-=elem->style.scroll.y;
+        elem->style.scroll.y+=mov*0.2;
       }
     }
     if (elem->settings&MU_EL_STUTTER&&(!(ctx->focus == elem->hash)&&elem->cooldown)) {
@@ -1192,12 +1217,12 @@ void mu_handle_animation(mu_Context *ctx) {
         }
         mov*=0.5;
         if ((int)mov==0) elem->cooldown=0;
-        elem->scroll.x-=(int)mov;
+        elem->style.scroll.x-=(int)mov;
       } else {
         float mov=100000;
         for (int i = 0; i < elem->tree.count; i++)
         {
-          
+
           float pos=ctx->element_stack.items[elem->tree.children[i]].rect.y-elem->rect.y;
           pos+=ctx->element_stack.items[elem->tree.children[i]].rect.h/2;
           pos-=elem->rect.h/2;
@@ -1206,12 +1231,24 @@ void mu_handle_animation(mu_Context *ctx) {
         mov*=0.5;
 
         if ((int)mov==0) elem->cooldown=0;
-        elem->scroll.y-=(int)mov;
+        elem->style.scroll.y-=(int)mov;
       }
     }
   }
 }
 
+
+void mu_animation_update(mu_Context *ctx, double dt) { //dt is delta time
+  for (int i = ctx->anim_stack.idx-1; i >=0 ; i++)
+  {
+    mu_Anim *it = &ctx->anim_stack.items[i];
+    it->progress+= dt / it->time; // this is a linear interpolation. we can also use different tweens
+    if (it->progress >=1.0)
+      *it = ctx->anim_stack.items[--ctx->anim_stack.idx]; // if the animation is over we copy the last animation slot into the current one
+
+  }
+  
+}
 
 void mu_print_debug_tree(mu_Context *ctx){
     for (int i = 0; i < ctx->element_stack.idx; i++)
@@ -1233,8 +1270,31 @@ void mu_add_text_to_elem(mu_Context *ctx,const char* text) {
   elem->text.str=text;
 }
 
+void mu_animation_set(mu_Context *ctx, void (*anim)(mu_Elem* elem))
+{
+  mu_Elem* elem= &ctx->element_stack.items[ctx->element_stack.idx-1];
+  anim(elem);
+  
+}
 
+void mu_animation_add(mu_Context *ctx,int (*tween)(int* t),
+                      int time, 
+                      mu_AnimType animtype,
+                      mu_AnimatableOverride animable,
+                      int hash
+                    ){
+  for (int i = 0; i < ctx->anim_stack.idx; i++)
+  {
+    mu_Anim *anim = &ctx->anim_stack.items[i];
+    if (anim->hash==hash){
+      if (animable.set_flags!=anim->animable.set_flags){
+        
+      }
 
+    }
+  }
+  
+}
 
 /// @brief Begins a new root-level container.
 /// @param ctx The MicroUI context.
@@ -1316,8 +1376,9 @@ void mu_end_elem_window(mu_Context *ctx) {
   mu_resize(ctx);
   mu_apply_size(ctx);
   mu_adjust_elem_positions(ctx);
-  mu_handle_interaction(ctx);
-  mu_handle_animation(ctx);
+  // mu_handle_interaction(ctx);
+  // mu_handle_animation(ctx);
+  mu_animation_update(ctx, ctx->dt);
   mu_draw_debug_elems(ctx);
   // mu_print_debug_tree(ctx);
   end_root_container(ctx);

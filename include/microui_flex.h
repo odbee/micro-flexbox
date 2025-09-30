@@ -25,7 +25,7 @@ extern "C" {
 #define MU_IDSTACK_SIZE         32
 #define MU_LAYOUTSTACK_SIZE     16
 #define MU_ELEMENTSTACK_SIZE    256
-
+#define MU_ANIMSTACK_SIZE        256
 #define MU_CONTAINERPOOL_SIZE   48
 #define MU_TREENODEPOOL_SIZE    48
 #define MU_MAX_WIDTHS           16
@@ -118,6 +118,20 @@ enum {
 
 
 enum {
+  MU_STATE_INACTIVE     ,
+  MU_STATE_ACTIVE       ,
+  MU_STATE_HOVERED      ,
+  MU_STATE_JUSTHOVERED  ,
+  MU_STATE_FOCUSED      ,
+  MU_STATE_JUSTFOCUSED  ,
+  MU_STATE_UNFOCUSED    ,
+  MU_STATE_UNHOVERED    ,
+  
+    
+};
+
+
+enum {
   MU_MOUSE_LEFT       = (1 << 0),
   MU_MOUSE_RIGHT      = (1 << 1),
   MU_MOUSE_MIDDLE     = (1 << 2)
@@ -183,6 +197,11 @@ typedef enum {
     DIR_Y = 0
 } mu_Dir;
 
+typedef enum {
+    PERMANENT = 1,
+    TEMPORARY = 0
+} mu_AnimType;
+
 typedef struct {
   int children[MU_MAX_CHILDREN]; // id of children
   int count;
@@ -204,7 +223,6 @@ typedef struct {
 
 typedef struct {
   //fixed styling
-
   mu_Color border_color;
   mu_Color bg_color;
   
@@ -218,7 +236,44 @@ typedef struct {
   //anim styling
   mu_Color hover_color;
   mu_Color focus_color;
-} mu_Elemstyle;
+  
+  mu_Vec2 scroll;
+
+} mu_Animatable;
+
+#define MU_STYLE_BORDER_COLOR  (1<<0)
+#define MU_STYLE_BG_COLOR      (1<<1)
+#define MU_STYLE_BORDER_SIZE   (1<<2)
+#define MU_STYLE_GAP           (1<<3)
+#define MU_STYLE_PADDING       (1<<4)
+#define MU_STYLE_TEXT_COLOR    (1<<5)
+#define MU_STYLE_FONT          (1<<6)
+#define MU_STYLE_TEXT_ALIGN    (1<<7)
+#define MU_STYLE_HOVER_COLOR   (1<<8)
+#define MU_STYLE_SCROLL_X      (1<<10)
+#define MU_STYLE_SCROLL_Y      (1<<11)
+
+
+
+typedef struct {
+  unsigned short set_flags; // bitmask indicating which fields are active
+  //fixed styling
+  mu_Color border_color;
+  mu_Color bg_color;
+  signed char border_size;
+  signed char gap;
+  signed char padding;
+  //text styling
+  mu_Color text_color;
+  mu_Font font;
+  int text_align;
+  //anim styling
+  mu_Color hover_color;
+  mu_Color focus_color;
+  
+  mu_Vec2 scroll;
+
+} mu_AnimatableOverride;
 
 
 typedef struct {
@@ -226,21 +281,30 @@ typedef struct {
   mu_Dir direction;
   mu_fVec2 sizing; // 0 to 1 values are for percent. 1 to n values are for fixed, 0 is for grow,-1 is for fit.
   mu_Vec2 min; // minimum size for box
-  mu_Vec2 scroll;
   mu_Rect rect;
   mu_Tree tree;
   mu_Text text;
   mu_Rect clip;
   int childrensize; //TOTAL SIZE OF ALL CHILDREN ELEMENTS TOGETHER (without padding or gap)
   int idx;
+  int state;
   unsigned int hash;
   signed char tier;
   int settings;
   signed char cooldown;
-  mu_Elemstyle style;
+  mu_Animatable style;
 
 } mu_Elem;
 
+
+
+typedef struct {
+  mu_AnimType type;
+  mu_AnimatableOverride animable;
+  int hash;
+  int (*tween)(int t);
+  double progress, time, initial,prev;
+} mu_Anim;
 
 typedef struct {
   mu_Command *head, *tail;
@@ -273,8 +337,8 @@ struct mu_Context {
   mu_Style _style;
   mu_Style *style;
 
-  mu_Elemstyle _elemstyle;
-  mu_Elemstyle *elemstyle;
+  mu_Animatable _animatable;
+  mu_Animatable *animatable;
   
   mu_Id hover;
   mu_Id focus;
@@ -284,11 +348,14 @@ struct mu_Context {
   int updated_focus;
   int frame;
   int tier;
+  int last_time;
+  int dt; // DELTA TIME
   mu_Container *hover_root;
   mu_Container *next_hover_root;
   mu_Container *scroll_target;
   char number_edit_buf[MU_MAX_FMT];
   mu_Id number_edit;
+  
   /* stacks */
   mu_stack(char, MU_COMMANDLIST_SIZE) command_list;
   mu_stack(mu_Container*, MU_ROOTLIST_SIZE) root_list;
@@ -296,6 +363,7 @@ struct mu_Context {
   mu_stack(mu_Rect, MU_CLIPSTACK_SIZE) clip_stack;
   mu_stack(mu_Id, MU_IDSTACK_SIZE) id_stack;
   mu_stack(mu_Elem, MU_ELEMENTSTACK_SIZE) element_stack;
+  mu_stack(mu_Anim, MU_ANIMSTACK_SIZE) anim_stack;
   /* retained state pools */
   mu_PoolItem container_pool[MU_CONTAINERPOOL_SIZE];
   mu_Container containers[MU_CONTAINERPOOL_SIZE];
@@ -401,7 +469,7 @@ void mu_layout_row(mu_Context *ctx, int items, const int *widths, int height);
 
 
 // FLEX  FUNCTIONS
-void mu_begin_elem_ex(mu_Context *ctx, float sizex, float sizey, mu_Dir direction,int alignopts, int settings);
+int mu_begin_elem_ex(mu_Context *ctx, float sizex, float sizey, mu_Dir direction,int alignopts, int settings);
 void mu_end_elem(mu_Context *ctx);
 void mu_resize(mu_Context *ctx);
 void mu_apply_size(mu_Context *ctx);
@@ -412,7 +480,9 @@ int mu_begin_elem_window_ex(mu_Context *ctx, const char *title, mu_Rect rect, in
 void mu_end_elem_window(mu_Context *ctx);
 void mu_handle_interaction(mu_Context *ctx);
 void mu_add_text_to_elem(mu_Context *ctx,const char* text);
-void mu_set_global_style(mu_Context *ctx,mu_Elemstyle style);
+void mu_set_global_style(mu_Context *ctx,mu_Animatable style);
+void mu_animation_set(mu_Context *ctx,void (*anim)(mu_Elem* elem));
+
 #ifdef __cplusplus
 }
 #endif
