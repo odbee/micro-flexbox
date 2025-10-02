@@ -163,26 +163,7 @@ static int rect_overlaps_vec2(mu_Rect r, mu_Vec2 p) {
   return p.x >= r.x && p.x < r.x + r.w && p.y >= r.y && p.y < r.y + r.h;
 }
 
-/// @brief Draws a colored frame with an optional border.
-///
-/// This function is used to render a solid, filled rectangle and, based on
-/// the specified color ID and the style's border settings, may also draw
-/// a 1-pixel border around it. Specific color IDs for scrollbars and
-/// titles will not have a border drawn.
-///
-/// @param ctx The current context of the UI library.
-/// @param rect The rectangle to draw.
-/// @param colorid The ID of the color to use from the context's style.
-static void draw_frame(mu_Context *ctx, mu_Rect rect, int colorid) {
-  mu_draw_rect(ctx, rect, ctx->style->colors[colorid]);
-  if (colorid == MU_COLOR_SCROLLBASE  ||
-      colorid == MU_COLOR_SCROLLTHUMB ||
-      colorid == MU_COLOR_TITLEBG) { return; }
-  /* draw border */
-  if (ctx->style->colors[MU_COLOR_BORDER].a) {
-    mu_draw_outline_ex(ctx, rect, ctx->style->colors[MU_COLOR_BORDER],1);
-  }
-}
+
 
 /// @brief Initializes a MicroUI context.
 /// @param ctx The context to initialize.
@@ -191,7 +172,6 @@ static void draw_frame(mu_Context *ctx, mu_Rect rect, int colorid) {
 /// drawing function, and configures the default style.
 void mu_init(mu_Context *ctx) {
   memset(ctx, 0, sizeof(*ctx));
-  ctx->draw_frame = draw_frame;
   ctx->_style = default_style;
   ctx->style = &ctx->_style;
   ctx->_animatable = default_animatable;
@@ -214,8 +194,7 @@ void mu_begin(mu_Context *ctx) {
   ctx->root_list.idx = 0;
   ctx->element_stack.idx=0;
   ctx->current_parent=NULL;
-  ctx->hover_root = ctx->next_hover_root;
-  ctx->next_hover_root = NULL;
+
   ctx->mouse_delta.x = ctx->mouse_pos.x - ctx->last_mouse_pos.x;
   ctx->mouse_delta.y = ctx->mouse_pos.y - ctx->last_mouse_pos.y;
   ctx->frame++;
@@ -246,14 +225,7 @@ void mu_end(mu_Context *ctx) {
   // if (!ctx->updated_focus) { ctx->focus = 0; }
   // ctx->updated_focus = 0;
 
-  // TODO EDIT FOR ADDING TOUCH INPUT
-  /* bring hover root to front if mouse was pressed */
-  if (ctx->mouse_pressed && ctx->next_hover_root &&
-      ctx->next_hover_root->zindex < ctx->last_zindex &&
-      ctx->next_hover_root->zindex >= 0
-  ) {
-    mu_bring_to_front(ctx, ctx->next_hover_root);
-  }
+
 
   /* reset input state */
   ctx->key_pressed = 0;
@@ -466,7 +438,6 @@ static mu_Container* get_container(mu_Context *ctx, mu_Id id, int opt) {
   cnt = &ctx->containers[idx];
   memset(cnt, 0, sizeof(*cnt));
   cnt->open = 1;
-  mu_bring_to_front(ctx, cnt);
   return cnt;
 }
 
@@ -485,16 +456,6 @@ mu_Container* mu_get_container(mu_Context *ctx, const char *name) {
   return get_container(ctx, id, 0);
 }
 
-/// @brief Brings a container to the front of the drawing order.
-/// @param ctx The MicroUI context.
-/// @param cnt A pointer to the container to be brought to the front.
-///
-/// This function updates the container's z-index to a new, higher value. This
-/// ensures that when the containers are sorted for rendering, this container
-/// will be drawn on top of all others.
-void mu_bring_to_front(mu_Context *ctx, mu_Container *cnt) {
-  cnt->zindex = ++ctx->last_zindex;
-}
 
 
 /*============================================================================
@@ -850,29 +811,6 @@ enum { RELATIVE = 1, ABSOLUTE = 2 };
 **============================================================================*/
 
 
-/// @brief Adds a command to draw the (optional) frame for a control.
-/// @param ctx The MicroUI context.
-/// @param id The unique identifier of the control.
-/// @param rect The rectangle of the control's frame.
-/// @param colorid The base color ID for the frame.
-/// @param opt A bitmask of options for the control, such as `MU_OPT_NOFRAME`.
-///
-/// This function queues a command to draw the background frame for an
-/// interactive control (e.g., a button, slider, or checkbox). It checks for
-/// the `MU_OPT_NOFRAME` option and returns if it is set. Otherwise, it
-/// automatically adjusts the base `colorid` to select the correct color for
-/// hovered or focused states before calling the user-provided `draw_frame`
-/// function pointer.
-void mu_draw_control_frame(mu_Context *ctx, mu_Id id, mu_Rect rect,
-  int colorid, int opt)
-{
-  if (opt & MU_OPT_NOFRAME) { return; }
-  colorid += (ctx->focus == id) ? 2 : (ctx->hover == id) ? 1 : 0;
-  ctx->draw_frame(ctx, rect, colorid);
-}
-
-
-
 
 
 /// @brief Checks if the mouse is currently hovering over a rectangle.
@@ -982,7 +920,7 @@ int mu_begin_elem_ex(mu_Context *ctx, float sizex,float sizey, mu_Dir direction,
   new_elem->tree.count=0;
   new_elem->tree.parent=-1;
   new_elem->idx=newindex; //set element id after we pushed it
-  new_elem->style=*ctx->animatable;
+  new_elem->animatable=*ctx->animatable;
   new_elem->tier=ctx->tier++;
   new_elem->childAlignment=alignopts;
   new_elem->settings=settings;
@@ -1011,10 +949,10 @@ void mu_end_elem(mu_Context *ctx) {
   mu_Elem*new_elem=&ctx->element_stack.items[ctx->element_stack.idx-1];
   if (new_elem->sizing.x==-1) {
     if (new_elem->text.str) {
-      new_elem->sizing.x=(float)(ctx->text_width(new_elem->style.font,new_elem->text.str,-1)+new_elem->style.padding*2);
+      new_elem->sizing.x=(float)(ctx->text_width(new_elem->animatable.font,new_elem->text.str,-1)+new_elem->animatable.padding*2);
     }
   } else if (new_elem->sizing.y==-1) {
-      new_elem->sizing.y=(float)(ctx->text_height(new_elem->style.font)+new_elem->style.padding*2);
+      new_elem->sizing.y=(float)(ctx->text_height(new_elem->animatable.font)+new_elem->animatable.padding*2);
 
   }
   ctx->tier--;
@@ -1042,13 +980,13 @@ void mu_resize_children(mu_Context *ctx,mu_Elem* elem) {
       if (child->sizing.x <= 1&&child->sizing.x>0)
       {
         child->sizing.x = (child->sizing.x * elem->sizing.x); 
-        child->sizing.x -= 2*elem->style.padding;
-        child->sizing.x -= elem->style.gap*(elem->tree.count-1)*(elem->direction); //ONLY ADD GAPS TO THE ACTIVE AXIS
+        child->sizing.x -= 2*elem->animatable.padding;
+        child->sizing.x -= elem->animatable.gap*(elem->tree.count-1)*(elem->direction); //ONLY ADD GAPS TO THE ACTIVE AXIS
       }
       if (child->sizing.y <= 1&&child->sizing.y>0){
         child->sizing.y = (child->sizing.y * elem->sizing.y);
-        child->sizing.y -= 2*elem->style.padding;
-        child->sizing.y -= elem->style.gap*(elem->tree.count-1)*((elem->direction+1)%2);//ONLY ADD GAPS TO THE ACTIVE AXIS
+        child->sizing.y -= 2*elem->animatable.padding;
+        child->sizing.y -= elem->animatable.gap*(elem->tree.count-1)*((elem->direction+1)%2);//ONLY ADD GAPS TO THE ACTIVE AXIS
       }
       //ADD TO TOTAL CHILD SIZE
       totalChildSize += child->sizing.x*((elem->direction +0)%2);
@@ -1058,13 +996,12 @@ void mu_resize_children(mu_Context *ctx,mu_Elem* elem) {
     for (int j =0;j<growChildren;j++){
         mu_Elem* child = listofgrowers[j];
         //TODO STILL HAVE TO CHECK IF MIN SIZE IS BIGGER THAN GROW SIZE
-        child->sizing.x+=((elem->sizing.x - adjustsize-elem->style.gap*(elem->tree.count-1)-elem->style.padding*2)/growChildren )*(elem->direction);
-        child->sizing.y+=((elem->sizing.y - adjustsize)/growChildren-elem->style.gap*(elem->tree.count-1)-elem->style.padding*2 )*((elem->direction +1)%2);
+        child->sizing.x+=((elem->sizing.x - adjustsize-elem->animatable.gap*(elem->tree.count-1)-elem->animatable.padding*2)/growChildren )*(elem->direction);
+        child->sizing.y+=((elem->sizing.y - adjustsize)/growChildren-elem->animatable.gap*(elem->tree.count-1)-elem->animatable.padding*2 )*((elem->direction +1)%2);
         totalChildSize+=child->sizing.x*(elem->direction);
         totalChildSize+=child->sizing.y*((elem->direction +1)%2);
     }
-    elem->childrensize=totalChildSize;
-
+    elem->content_size=totalChildSize;
   } 
 }
 
@@ -1106,27 +1043,27 @@ void mu_adjust_children_positions(mu_Context *ctx,mu_Elem* elem){
       child  =  &ctx->element_stack.items[elem->tree.children[i]];
       child->rect.x = elem->rect.x;
       child->rect.y = elem->rect.y;
-      child->rect.x += elem->style.padding;
-      child->rect.y += elem->style.padding;
+      child->rect.x += elem->animatable.padding;
+      child->rect.y += elem->animatable.padding;
       if (elem->direction==DIR_X){
-        child->rect.x +=(elem->rect.w-elem->childrensize)* m.x;
-        child->rect.x -=(2*elem->style.padding+(elem->tree.count-1)*elem->style.gap)*m.x;
+        child->rect.x +=(elem->rect.w-elem->content_size)* m.x;
+        child->rect.x -=(2*elem->animatable.padding+(elem->tree.count-1)*elem->animatable.gap)*m.x;
         child->rect.y +=(elem->rect.h-child->rect.h)*m.y;
-        child->rect.y -=(2*elem->style.padding)*m.y;
+        child->rect.y -=(2*elem->animatable.padding)*m.y;
       } else {
         child->rect.x +=(elem->rect.w-child->rect.w)*m.x;  
-        child->rect.x -=2*elem->style.padding*m.x;
+        child->rect.x -=2*elem->animatable.padding*m.x;
 
-        child->rect.y +=(elem->rect.h-elem->childrensize)* m.y;
-        child->rect.y -=(2*elem->style.padding+(elem->tree.count-1)*elem->style.gap)*m.y;
+        child->rect.y +=(elem->rect.h-elem->content_size)* m.y;
+        child->rect.y -=(2*elem->animatable.padding+(elem->tree.count-1)*elem->animatable.gap)*m.y;
 
       }
       child->rect.x += compoundx;
       child->rect.y += compoundy;
-      child->rect.x += elem->style.scroll.x;
-      child->rect.y += elem->style.scroll.y;
-      compoundx     += (child->rect.w +elem->style.gap)*((elem->direction +0)%2);
-      compoundy     += (child->rect.h +elem->style.gap)*((elem->direction +1)%2);
+      child->rect.x += elem->animatable.scroll.x;
+      child->rect.y += elem->animatable.scroll.y;
+      compoundx     += (child->rect.w +elem->animatable.gap)*((elem->direction +0)%2);
+      compoundy     += (child->rect.h +elem->animatable.gap)*((elem->direction +1)%2);
 
       child->clip=mu_get_clip_rect(ctx);
 
@@ -1152,9 +1089,10 @@ void mu_adjust_elem_positions(mu_Context *ctx)
 void mu_draw_debug_elems(mu_Context *ctx){
   for (int i = 0; i < ctx->element_stack.idx; i++)
   {
+
     mu_Elem*elem=&ctx->element_stack.items[i];
     
-    mu_draw_debug_clip_outline_ex(ctx, elem->rect, elem->clip,elem->style.border_color, elem->style.border_size);
+    mu_draw_debug_clip_outline_ex(ctx, elem->rect, elem->clip,elem->animatable.border_color, elem->animatable.border_size);
     if (elem->settings&MU_EL_DEBUG){
       mu_draw_rect(ctx,elem->clip,mu_color(0,0,255,50));
       mu_draw_rect(ctx,intersect_rects(elem->clip,elem->rect),mu_color(0,255,0,50));
@@ -1162,7 +1100,7 @@ void mu_draw_debug_elems(mu_Context *ctx){
     }
     
     if (elem->text.str) {
-      mu_draw_text_ex(ctx,elem->style.font,elem->text.str,sizeof(elem->text.str),mu_vec2(elem->rect.x,elem->rect.y),elem->style.text_color,intersect_rects(elem->clip,elem->rect),elem->rect,elem->style.text_align,elem->style.padding );
+      mu_draw_text_ex(ctx,elem->animatable.font,elem->text.str,sizeof(elem->text.str),mu_vec2(elem->rect.x,elem->rect.y),elem->animatable.text_color,intersect_rects(elem->clip,elem->rect),elem->rect,elem->animatable.text_align,elem->animatable.padding );
     }
   }
 }
@@ -1172,12 +1110,12 @@ void mu_handle_interaction(mu_Context *ctx){
     for (int i = 0; i < ctx->element_stack.idx; i++)
   {
     mu_Elem*elem=&ctx->element_stack.items[i];
-    if (ctx->hover == elem->hash) { elem->style.border_color = mu_color(0,0,255,255); }
+    if (ctx->hover == elem->hash) { elem->animatable.border_color = mu_color(0,0,255,255); }
     if (ctx->focus == elem->hash) { 
-      elem->style.border_color = mu_color(0,255,0,255); 
+      elem->animatable.border_color = mu_color(0,255,0,255); 
       if(elem->settings&MU_EL_DRAGGABLE||elem->settings&MU_EL_STUTTER){
         if (ctx->mouse_down== MU_MOUSE_LEFT){
-          elem->style.scroll.y+=ctx->mouse_delta.y;
+          elem->animatable.scroll.y+=ctx->mouse_delta.y;
           // printf("motion");
         }
       }
@@ -1191,18 +1129,18 @@ void mu_handle_animation(mu_Context *ctx) {
   for (int i = 0; i < ctx->element_stack.idx; i++){
     mu_Elem* elem=&ctx->element_stack.items[i];
     
-    if (elem->settings&MU_EL_DRAGGABLE&&(!(ctx->focus == elem->hash))&&(elem->style.scroll.x!=0||elem->style.scroll.y!=0)) {
+    if (elem->settings&MU_EL_DRAGGABLE&&(!(ctx->focus == elem->hash))&&(elem->animatable.scroll.x!=0||elem->animatable.scroll.y!=0)) {
       int mov=0;
       if (elem->direction==DIR_X){
-        int relativesize= elem->childrensize+elem->style.padding*2+(elem->tree.count-1)*elem->style.gap;
-        mov=mu_clamp(elem->style.scroll.x,0,elem->rect.w-relativesize);
-        mov-=elem->style.scroll.x;
-        elem->style.scroll.x+=mov*0.1;
+        int relativesize= elem->content_size+elem->animatable.padding*2+(elem->tree.count-1)*elem->animatable.gap;
+        mov=mu_clamp(elem->animatable.scroll.x,0,elem->rect.w-relativesize);
+        mov-=elem->animatable.scroll.x;
+        elem->animatable.scroll.x+=mov*0.1;
       } else {
-        int relativesize= elem->childrensize+elem->style.padding*2+(elem->tree.count-1)*elem->style.gap;
-        mov=mu_clamp(elem->style.scroll.y,elem->rect.h-relativesize,0);
-        mov-=elem->style.scroll.y;
-        elem->style.scroll.y+=mov*0.2;
+        int relativesize= elem->content_size+elem->animatable.padding*2+(elem->tree.count-1)*elem->animatable.gap;
+        mov=mu_clamp(elem->animatable.scroll.y,elem->rect.h-relativesize,0);
+        mov-=elem->animatable.scroll.y;
+        elem->animatable.scroll.y+=mov*0.2;
       }
     }
     if (elem->settings&MU_EL_STUTTER&&(!(ctx->focus == elem->hash)&&elem->cooldown)) {
@@ -1217,7 +1155,7 @@ void mu_handle_animation(mu_Context *ctx) {
         }
         mov*=0.5;
         if ((int)mov==0) elem->cooldown=0;
-        elem->style.scroll.x-=(int)mov;
+        elem->animatable.scroll.x-=(int)mov;
       } else {
         float mov=100000;
         for (int i = 0; i < elem->tree.count; i++)
@@ -1231,7 +1169,7 @@ void mu_handle_animation(mu_Context *ctx) {
         mov*=0.5;
 
         if ((int)mov==0) elem->cooldown=0;
-        elem->style.scroll.y-=(int)mov;
+        elem->animatable.scroll.y-=(int)mov;
       }
     }
   }
@@ -1287,10 +1225,18 @@ void mu_animation_add(mu_Context *ctx,int (*tween)(int* t),
   {
     mu_Anim *anim = &ctx->anim_stack.items[i];
     if (anim->hash==hash){
-      if (animable.set_flags!=anim->animable.set_flags){
+      anim->initial= anim->prev;
+      anim->time=time;
+      anim->progress=0;
+      return;
+      // if (animable.set_flags != anim->animable.set_flags){
         
-      }
-
+      // }
+    }
+    if (ctx->anim_stack.idx<MU_ANIMSTACK_SIZE){
+      ctx->anim_stack.items[ctx->anim_stack.idx++]=(mu_Anim) {
+        
+      };
     }
   }
   
@@ -1313,13 +1259,6 @@ static void begin_root_container(mu_Context *ctx, mu_Container *cnt) {
   /* push container to roots list and push head command */
   push(ctx->root_list, cnt);
   cnt->head = push_jump(ctx, NULL);
-  /* set as hover root if the mouse is overlapping this container and it has a
-  ** higher zindex than the current hover root */
-  if (rect_overlaps_vec2(cnt->rect, ctx->mouse_pos) &&
-      (!ctx->next_hover_root || cnt->zindex > ctx->next_hover_root->zindex)
-  ) {
-    ctx->next_hover_root = cnt;
-  }
   /* clipping is reset here in case a root-container is made within
   ** another root-containers's begin/end block; this prevents the inner
   ** root-container being clipped to the outer */

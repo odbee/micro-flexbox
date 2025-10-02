@@ -73,13 +73,13 @@ static mu_Animatable isostyle = {
 void cooldown(mu_Elem* elem) {
       int mov=0;
       if (elem->direction==DIR_X){
-        int relativesize= elem->childrensize+elem->style.padding*2+(elem->tree.count-1)*elem->style.gap;
-        mov=mu_clamp(elem->style.scroll.x,0,elem->rect.w-relativesize);
+        int relativesize= elem->content_size+elem->animatable.padding*2+(elem->tree.count-1)*elem->animatable.gap;
+        mov=mu_clamp(elem->animatable.scroll.x,0,elem->rect.w-relativesize);
         // mu_animation_start(elem->hash,);
       } else {
-        int relativesize= elem->childrensize+elem->style.padding*2+(elem->tree.count-1)*elem->style.gap;
-        mov=mu_clamp(elem->style.scroll.y,elem->rect.h-relativesize,0);
-        mov-=elem->style.scroll.y;
+        int relativesize= elem->content_size+elem->animatable.padding*2+(elem->tree.count-1)*elem->animatable.gap;
+        mov=mu_clamp(elem->animatable.scroll.y,elem->rect.h-relativesize,0);
+        mov-=elem->animatable.scroll.y;
 
       }
     

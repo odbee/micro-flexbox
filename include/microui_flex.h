@@ -275,7 +275,6 @@ typedef struct {
 
 } mu_AnimatableOverride;
 
-
 typedef struct {
   int childAlignment;// align top, center, bottom. left middle right
   mu_Dir direction;
@@ -285,14 +284,14 @@ typedef struct {
   mu_Tree tree;
   mu_Text text;
   mu_Rect clip;
-  int childrensize; //TOTAL SIZE OF ALL CHILDREN ELEMENTS TOGETHER (without padding or gap)
+  int content_size; //TOTAL SIZE OF ALL CHILDREN ELEMENTS TOGETHER (without padding or gap)
   int idx;
   int state;
   unsigned int hash;
   signed char tier;
   int settings;
   signed char cooldown;
-  mu_Animatable style;
+  mu_Animatable animatable;
 
 } mu_Elem;
 
@@ -316,6 +315,7 @@ typedef struct {
   int open;
 } mu_Container;
 
+
 typedef struct {
   mu_Font font;
   mu_Vec2 size;
@@ -332,7 +332,6 @@ struct mu_Context {
   /* callbacks */
   int (*text_width)(mu_Font font, const char *str, int len);
   int (*text_height)(mu_Font font);
-  void (*draw_frame)(mu_Context *ctx, mu_Rect rect, int colorid);
   /* core state */
   mu_Style _style;
   mu_Style *style;
@@ -350,8 +349,7 @@ struct mu_Context {
   int tier;
   int last_time;
   int dt; // DELTA TIME
-  mu_Container *hover_root;
-  mu_Container *next_hover_root;
+
   mu_Container *scroll_target;
   char number_edit_buf[MU_MAX_FMT];
   mu_Id number_edit;
