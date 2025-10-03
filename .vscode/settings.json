@@ -14,6 +14,8 @@
         "limits": "c",
         "corecrt_wstdlib.h": "c",
         "sdl_opengl.h": "c",
-        "microui_flex.h": "c"
+        "microui_flex.h": "c",
+        "cmath": "c",
+        "concepts": "c"
     }
 }

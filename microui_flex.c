@@ -217,16 +217,9 @@ void mu_end(mu_Context *ctx) {
   expect(ctx->id_stack.idx        == 0);
 
   /* STORE TIME*/
-  ctx->dt = (SDL_GetTicks() - ctx->last_time) / 1000.0;
+  ctx->dt = (SDL_GetTicks() - ctx->last_time);
   ctx->last_time = SDL_GetTicks();
-
-
-  /* unset focus if focus id was not touched this frame */
-  // if (!ctx->updated_focus) { ctx->focus = 0; }
-  // ctx->updated_focus = 0;
-
-
-
+  // printf("dt %d, last_time %d\n", ctx->dt, ctx->last_time);
   /* reset input state */
   ctx->key_pressed = 0;
   ctx->input_text[0] = '\0';
@@ -848,6 +841,8 @@ void mu_update_element_control(mu_Context *ctx, mu_Elem* elem) {
   int mouseover = mu_mouse_over(ctx, rect);
   elem->state=MU_STATE_ACTIVE;
   if (ctx->focus == id) {
+    ctx->hover = 0;
+
     ctx->updated_focus = 1;
     elem->state=MU_STATE_FOCUSED;// this means its still focused from last frame
     if (ctx->mouse_pressed && !mouseover) { // no longer over object but still down
@@ -938,8 +933,7 @@ int mu_begin_elem_ex(mu_Context *ctx, float sizex,float sizey, mu_Dir direction,
     ctx->current_parent=new_elem;
   }
   if (new_elem->hash==ctx->focus){
-      printf("FOCUS ID, %d %d\n",new_elem->idx, new_elem->state);
-
+      // printf("FOCUS ID, %d %d\n",new_elem->idx, new_elem->state);
   }
   return new_elem->state;
 }
@@ -1086,17 +1080,119 @@ void mu_adjust_elem_positions(mu_Context *ctx)
   
 }
 
+static inline float lerp_float(float a, float b, float t) {
+    return a + t * (b - a);
+}
+
+static inline signed char lerp_char(signed char a, signed char b, float t) {
+    int v = (int)(a + t * (b - a));
+    if (v > 127) v = 127;
+    if (v < -128) v = -128;
+    return (signed char)v;
+}
+
+static inline mu_Color lerp_color(mu_Color a, mu_Color b, float t) {
+    mu_Color c;
+    c.r = (unsigned char)(a.r + t * (b.r - a.r));
+    c.g = (unsigned char)(a.g + t * (b.g - a.g));
+    c.b = (unsigned char)(a.b + t * (b.b - a.b));
+    c.a = (unsigned char)(a.a + t * (b.a - a.a));
+    return c;
+}
+#define MU_INTERPOLATABLE_FIELDS \
+    X(MU_STYLE_BORDER_COLOR, border_color, lerp_color) \
+    X(MU_STYLE_BG_COLOR,     bg_color,    lerp_color) \
+    X(MU_STYLE_BORDER_SIZE,  border_size, lerp_char) \
+    X(MU_STYLE_GAP,          gap,         lerp_char) \
+    X(MU_STYLE_PADDING,      padding,     lerp_char) \
+    X(MU_STYLE_TEXT_COLOR,   text_color,  lerp_color) \
+    /* font and text_align don’t really lerp meaningfully */ \
+    X(MU_STYLE_HOVER_COLOR,  hover_color, lerp_color) \
+    X(MU_STYLE_SCROLL_X,     scroll.x,    lerp_float) \
+    X(MU_STYLE_SCROLL_Y,     scroll.y,    lerp_float)
+
+mu_AnimatableOverride mu_interp_animatable(mu_AnimatableOverride initial,
+                                           mu_AnimatableOverride target,
+                                           float p) {
+    mu_AnimatableOverride result = initial;
+
+    #define X(FLAG, FIELD, LERP) \
+        if (target.set_flags & FLAG) { \
+            result.FIELD = LERP(initial.FIELD, target.FIELD, p); \
+        }
+    MU_INTERPOLATABLE_FIELDS
+    #undef X
+
+    return result;
+}
+
+#define MU_APPLY_FIELDS \
+    APPLY_FIELD(MU_STYLE_BORDER_COLOR, border_color) \
+    APPLY_FIELD(MU_STYLE_BG_COLOR,     bg_color) \
+    APPLY_FIELD(MU_STYLE_BORDER_SIZE,  border_size) \
+    APPLY_FIELD(MU_STYLE_GAP,          gap) \
+    APPLY_FIELD(MU_STYLE_PADDING,      padding) \
+    APPLY_FIELD(MU_STYLE_TEXT_COLOR,   text_color) \
+    APPLY_FIELD(MU_STYLE_FONT,         font) \
+    APPLY_FIELD(MU_STYLE_TEXT_ALIGN,   text_align) \
+    APPLY_FIELD(MU_STYLE_HOVER_COLOR,  hover_color) \
+    /* focus_color not in override flags? If needed, add here */ \
+    APPLY_FIELD(MU_STYLE_SCROLL_X,     scroll.x) \
+    APPLY_FIELD(MU_STYLE_SCROLL_Y,     scroll.y)
+
+void mu_apply_override(mu_Animatable *dst, const mu_AnimatableOverride *ovr) {
+    #define APPLY_FIELD(FLAG, FIELD) \
+        if (ovr->set_flags & FLAG) { \
+            dst->FIELD = ovr->FIELD; \
+        }
+    MU_APPLY_FIELDS
+    #undef APPLY_FIELD
+}
+
+mu_AnimatableOverride mu_apply_animation(mu_Context *ctx, mu_Elem* elem, mu_Elem* helper){
+  for (int i = 0; i < ctx->anim_stack.idx; i++) 
+  {
+    mu_Anim* it =&ctx->anim_stack.items[i];
+    if (it->hash==elem->hash){
+      if (it->progress==0){
+        it->initial=(mu_AnimatableOverride){it->animable.set_flags,elem->animatable.border_color,elem->animatable.bg_color,elem->animatable.border_size,elem->animatable.gap,elem->animatable.padding,elem->animatable.text_color,elem->animatable.font,elem->animatable.text_align,elem->animatable.hover_color,elem->animatable.focus_color};
+        it->prev=it->initial;
+      }
+      double p = it->progress;
+      p = 1 - (1-p) * (1-p); // this is a east out quad tween. we can also use different tweens
+      it->prev=mu_interp_animatable(it->initial,it->animable,p);
+
+      switch (it->type)
+      {
+      case PERMANENT:
+        mu_apply_override(&elem->animatable,&it->prev);
+        break;
+      case TEMPORARY:
+        mu_apply_override(&helper->animatable,&it->prev);
+        elem=helper;
+      }
+
+      return it->prev;
+
+    }
+  }
+  
+  return (mu_AnimatableOverride){};
+}
+
+
 void mu_draw_debug_elems(mu_Context *ctx){
   for (int i = 0; i < ctx->element_stack.idx; i++)
   {
-
     mu_Elem*elem=&ctx->element_stack.items[i];
-    
+    mu_Elem helper=ctx->element_stack.items[i];
+    mu_AnimatableOverride newoverride;
+    mu_apply_animation(ctx,elem,&helper);
+
     mu_draw_debug_clip_outline_ex(ctx, elem->rect, elem->clip,elem->animatable.border_color, elem->animatable.border_size);
     if (elem->settings&MU_EL_DEBUG){
       mu_draw_rect(ctx,elem->clip,mu_color(0,0,255,50));
       mu_draw_rect(ctx,intersect_rects(elem->clip,elem->rect),mu_color(0,255,0,50));
-
     }
     
     if (elem->text.str) {
@@ -1126,6 +1222,7 @@ void mu_handle_interaction(mu_Context *ctx){
 
 
 void mu_handle_animation(mu_Context *ctx) {
+  printf("handlig animation\n");
   for (int i = 0; i < ctx->element_stack.idx; i++){
     mu_Elem* elem=&ctx->element_stack.items[i];
     
@@ -1176,17 +1273,28 @@ void mu_handle_animation(mu_Context *ctx) {
 }
 
 
-void mu_animation_update(mu_Context *ctx, double dt) { //dt is delta time
-  for (int i = ctx->anim_stack.idx-1; i >=0 ; i++)
+void mu_animation_update(mu_Context *ctx, int dt) { //dt is delta time
+  printf("animstack size  %d\n", ctx->anim_stack.idx);
+
+  for (int i = ctx->anim_stack.idx-1; i >=0 ; i--)
   {
     mu_Anim *it = &ctx->anim_stack.items[i];
-    it->progress+= dt / it->time; // this is a linear interpolation. we can also use different tweens
-    if (it->progress >=1.0)
+    
+    it->progress+= (double)dt / it->time; 
+    printf("updating animation, anim index %d dt %f, time %f \n",i,(double)dt, it->time);
+    if (it->time==0){
+      it->progress=1;
+    }
+    if (it->progress >=1.0){
+      printf("anim finished");
       *it = ctx->anim_stack.items[--ctx->anim_stack.idx]; // if the animation is over we copy the last animation slot into the current one
+    }
 
   }
-  
 }
+
+
+
 
 void mu_print_debug_tree(mu_Context *ctx){
     for (int i = 0; i < ctx->element_stack.idx; i++)
@@ -1208,10 +1316,10 @@ void mu_add_text_to_elem(mu_Context *ctx,const char* text) {
   elem->text.str=text;
 }
 
-void mu_animation_set(mu_Context *ctx, void (*anim)(mu_Elem* elem))
+void mu_animation_set(mu_Context *ctx, void (*anim)(mu_Context *ctx,mu_Elem* elem))
 {
   mu_Elem* elem= &ctx->element_stack.items[ctx->element_stack.idx-1];
-  anim(elem);
+  anim(ctx,elem);
   
 }
 
@@ -1233,12 +1341,20 @@ void mu_animation_add(mu_Context *ctx,int (*tween)(int* t),
         
       // }
     }
-    if (ctx->anim_stack.idx<MU_ANIMSTACK_SIZE){
-      ctx->anim_stack.items[ctx->anim_stack.idx++]=(mu_Anim) {
-        
-      };
-    }
   }
+  if (ctx->anim_stack.idx<MU_ANIMSTACK_SIZE){
+    printf("adding animaiton");
+    ctx->anim_stack.items[ctx->anim_stack.idx++]=(mu_Anim) {
+      animtype,
+      animable,
+      hash,
+      NULL,
+      0,
+      time,
+
+    };
+  }
+
   
 }
 
@@ -1315,10 +1431,11 @@ void mu_end_elem_window(mu_Context *ctx) {
   mu_resize(ctx);
   mu_apply_size(ctx);
   mu_adjust_elem_positions(ctx);
-  // mu_handle_interaction(ctx);
-  // mu_handle_animation(ctx);
-  mu_animation_update(ctx, ctx->dt);
+  mu_handle_interaction(ctx);
+  mu_handle_animation(ctx);
   mu_draw_debug_elems(ctx);
+  mu_animation_update(ctx, ctx->dt);
+
   // mu_print_debug_tree(ctx);
   end_root_container(ctx);
 }

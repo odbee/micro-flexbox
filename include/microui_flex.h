@@ -302,8 +302,9 @@ typedef struct {
   mu_AnimatableOverride animable;
   int hash;
   int (*tween)(int t);
-  double progress, time, initial,prev;
-} mu_Anim;
+  double progress, time;
+  mu_AnimatableOverride initial,prev;
+}   mu_Anim;
 
 typedef struct {
   mu_Command *head, *tail;
@@ -479,7 +480,13 @@ void mu_end_elem_window(mu_Context *ctx);
 void mu_handle_interaction(mu_Context *ctx);
 void mu_add_text_to_elem(mu_Context *ctx,const char* text);
 void mu_set_global_style(mu_Context *ctx,mu_Animatable style);
-void mu_animation_set(mu_Context *ctx,void (*anim)(mu_Elem* elem));
+void mu_animation_set(mu_Context *ctx,void (*anim)(mu_Context *ctx, mu_Elem* elem));
+void mu_animation_add(mu_Context *ctx,int (*tween)(int* t),
+                      int time, 
+                      mu_AnimType animtype,
+                      mu_AnimatableOverride animable,
+                      int hash
+                    );
 
 #ifdef __cplusplus
 }
