@@ -50,6 +50,7 @@ static mu_Animatable itemstyle = {
   MU_ALIGN_MIDDLE|MU_ALIGN_CENTER, /* text_align*/
   { 180, 200, 0, 255 }, /* hover_color */
   { 130, 200, 230, 255 }, /* focus_color */
+    {0,0}
 };
 
 static mu_Animatable isostyle = {
@@ -65,27 +66,26 @@ static mu_Animatable isostyle = {
   MU_ALIGN_TOP|MU_ALIGN_LEFT, /* text_align*/
   { 180, 200, 0, 255 }, /* hover_color */
   { 130, 200, 230, 255 }, /* focus_color */
+  {0,0}
 };
-
-
-
 
 void cooldown(mu_Context *ctx, mu_Elem* elem) {
       mu_AnimatableOverride anim;
+      
       int mov=0;
       if (elem->direction==DIR_X){
         int relativesize= elem->content_size+elem->animatable.padding*2+(elem->tree.count-1)*elem->animatable.gap;
-        mov=mu_clamp(elem->animatable.scroll.x,0,elem->rect.w-relativesize);
+        mov=mu_clamp(elem->anim_override->scroll.x,0,elem->rect.w-relativesize);
         anim.set_flags=MU_STYLE_SCROLL_X;
         anim.scroll.x=mov;
-        mu_animation_add(ctx,0,3000,PERMANENT,anim,elem->hash);
+        mu_animation_add(ctx,0,100,anim,elem->hash);
       } else {
         int relativesize= elem->content_size+elem->animatable.padding*2+(elem->tree.count-1)*elem->animatable.gap;
-        mov=mu_clamp(elem->animatable.scroll.y,elem->rect.h-relativesize,0);
-        mov-=elem->animatable.scroll.y;
+        mov=mu_clamp(elem->anim_override->scroll.y,elem->rect.h-relativesize,0);
+        // mov-=elem->anim_override->scroll.y;
         anim.set_flags=MU_STYLE_SCROLL_Y;
         anim.scroll.y=mov;
-        mu_animation_add(ctx,0,3000,PERMANENT,anim,elem->hash);
+        mu_animation_add(ctx,0,100,anim,elem->hash);
       }
     
 }
@@ -95,12 +95,13 @@ void drag(mu_Context *ctx, mu_Elem* elem) {
       mu_AnimatableOverride anim;
       int mov=0;
       if (ctx->mouse_down== MU_MOUSE_LEFT){
-        mov=elem->animatable.scroll.y+ctx->mouse_delta.y;
+        mov=elem->anim_override->scroll.y+ctx->mouse_delta.y;
 
-        printf("motion");
+        // printf("motion\n");
+
         anim.set_flags=MU_STYLE_SCROLL_Y;
         anim.scroll.y=mov;
-        mu_animation_add(ctx,0,0,PERMANENT,anim,elem->hash);
+        mu_animation_add(ctx,0,0,anim,elem->hash);
       }
     
 }
@@ -131,13 +132,20 @@ static void layout(mu_Context *ctx) {
         ctx->animatable=&isostyle;
         switch(mu_begin_elem_ex(ctx,0.9,80,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),MU_EL_CLICKABLE|MU_EL_STUTTER)){
           case MU_STATE_UNFOCUSED:
-            printf("UNFOCUSED\n");
-            // mu_animation_set(ctx,cooldown);
+            mu_animation_set(ctx,cooldown);
             break;
           case MU_STATE_FOCUSED:
             mu_animation_set(ctx,drag);
+            break;
 
-            printf("FOCUSING\n");
+          
+          case MU_STATE_JUSTFOCUSED:
+            // for (size_t k = 0; k < MU_ELEMENTPOOL_SIZE; k++)
+            // {
+            //   printf("el %.0d id  %d\n",k, ctx->override_pool[k].id);
+            // }          
+            break;
+            // printf("FOCUSING\n");
 
         }
           ctx->animatable=&itemstyle;

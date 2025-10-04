@@ -16,6 +16,7 @@
         "sdl_opengl.h": "c",
         "microui_flex.h": "c",
         "cmath": "c",
-        "concepts": "c"
+        "concepts": "c",
+        "sdl.h": "c"
     }
 }

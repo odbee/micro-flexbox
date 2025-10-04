@@ -3,6 +3,8 @@
 #include <string.h>
 
 #include "microui_flex.h"
+#include <SDL2/SDL.h>
+
 
 #define unused(x) ((void) (x))
 
@@ -290,7 +292,7 @@ static void hash(mu_Id *hash, const void *data, int size) {
 /// This function creates a unique ID by combining the ID of the parent container
 /// (from the ID stack) with the hash of the provided data. This ensures that
 /// element IDs are unique within their hierarchical context. 
-/// @warning If multiple root-level elements are given the same name, they will
+/// @warning If multiple root-level overrides are given the same name, they will
 ///          generate identical IDs, which can lead to unpredictable behavior.
 mu_Id mu_get_id(mu_Context *ctx, const void *data, int size) { 
   int idx = ctx->id_stack.idx;
@@ -432,6 +434,33 @@ static mu_Container* get_container(mu_Context *ctx, mu_Id id, int opt) {
   memset(cnt, 0, sizeof(*cnt));
   cnt->open = 1;
   return cnt;
+}
+
+
+static mu_AnimatableOverride* get_override(mu_Context *ctx,mu_Id id) {
+    mu_AnimatableOverride *override;
+  /* try to get existing overrde from pool */
+  int idx = mu_pool_get(ctx, ctx->override_pool, MU_ELEMENTPOOL_SIZE, id);
+  if (idx >= 0) {
+      mu_pool_update(ctx, ctx->override_pool,  idx);
+    return &ctx->overrides[idx];
+  }
+  /* overrde not found in pool: init new container */
+
+  idx = mu_pool_init(ctx, ctx->override_pool, MU_ELEMENTPOOL_SIZE, id);
+  // printf("adding new override with idx %d and id %d\n", idx, ctx->override_pool[idx].id);
+
+  override = &ctx->overrides[idx]; 
+  mu_Elem* new_elem=&ctx->element_stack.items[ctx->element_stack.idx];
+  
+  memcpy( &override->border_color,&new_elem->animatable, sizeof(mu_Animatable));
+
+  // memset(override, 0, sizeof(*override));
+  return override;
+}
+
+mu_AnimatableOverride* mu_get_override(mu_Context *ctx,mu_Id hash) {
+  return get_override(ctx,hash);
 }
 
 /// @brief Retrieves or creates a container using a string name.
@@ -851,7 +880,7 @@ void mu_update_element_control(mu_Context *ctx, mu_Elem* elem) {
     }
     if (!ctx->mouse_down) { // no longer clicking
       mu_set_focus(ctx, 0);
-      printf("NO LONGER FOCUSING\n");
+      // printf("NO LONGER FOCUSING\n");
       elem->state=MU_STATE_UNFOCUSED;
       elem->cooldown=1;
     }
@@ -911,11 +940,11 @@ int mu_begin_elem_ex(mu_Context *ctx, float sizex,float sizey, mu_Dir direction,
   int newindex=ctx->element_stack.idx++;
   mu_Elem*new_elem=&ctx->element_stack.items[newindex];
     // fill with values
-
+  
   new_elem->tree.count=0;
   new_elem->tree.parent=-1;
   new_elem->idx=newindex; //set element id after we pushed it
-  new_elem->animatable=*ctx->animatable;
+  new_elem->animatable=*ctx->animatable; // THIS IS THE CULPRIT!!!!!!!
   new_elem->tier=ctx->tier++;
   new_elem->childAlignment=alignopts;
   new_elem->settings=settings;
@@ -925,6 +954,8 @@ int mu_begin_elem_ex(mu_Context *ctx, float sizex,float sizey, mu_Dir direction,
   const void *data = int_to_str(new_elem->idx);
   const char *s = (const char *)data;  // "12345"
   new_elem->hash=mu_get_id(ctx,s , strlen(s));
+  new_elem->anim_override=mu_get_override(ctx,new_elem->hash);
+
 
   if (new_elem->tier!=0){
     new_elem->tree.parent= ctx->current_parent->idx;
@@ -1055,7 +1086,12 @@ void mu_adjust_children_positions(mu_Context *ctx,mu_Elem* elem){
       child->rect.x += compoundx;
       child->rect.y += compoundy;
       child->rect.x += elem->animatable.scroll.x;
-      child->rect.y += elem->animatable.scroll.y;
+      if (elem->anim_override->set_flags & MU_STYLE_SCROLL_Y) {
+        child->rect.y += elem->anim_override->scroll.y;
+      } else {
+        child->rect.y += elem->animatable.scroll.y;
+
+      } 
       compoundx     += (child->rect.w +elem->animatable.gap)*((elem->direction +0)%2);
       compoundy     += (child->rect.h +elem->animatable.gap)*((elem->direction +1)%2);
 
@@ -1149,29 +1185,31 @@ void mu_apply_override(mu_Animatable *dst, const mu_AnimatableOverride *ovr) {
     #undef APPLY_FIELD
 }
 
-mu_AnimatableOverride mu_apply_animation(mu_Context *ctx, mu_Elem* elem, mu_Elem* helper){
+void mu_apply(mu_Context *ctx, mu_Elem* elem) {
+ for (int i = 0; i < ctx->anim_stack.idx; i++) 
+  {
+    mu_Anim* it =&ctx->anim_stack.items[i];
+    if (it->hash==elem->hash){
+      elem->anim_override->scroll.y+=1;
+      elem->anim_override->set_flags|=MU_STYLE_SCROLL_Y;
+    }
+  }
+}
+mu_AnimatableOverride mu_apply_animation(mu_Context *ctx, mu_Elem* elem){
+  
   for (int i = 0; i < ctx->anim_stack.idx; i++) 
   {
     mu_Anim* it =&ctx->anim_stack.items[i];
     if (it->hash==elem->hash){
+      //TODO CHANGE INITIAL TO USE
       if (it->progress==0){
-        it->initial=(mu_AnimatableOverride){it->animable.set_flags,elem->animatable.border_color,elem->animatable.bg_color,elem->animatable.border_size,elem->animatable.gap,elem->animatable.padding,elem->animatable.text_color,elem->animatable.font,elem->animatable.text_align,elem->animatable.hover_color,elem->animatable.focus_color};
+        it->initial=*elem->anim_override;
         it->prev=it->initial;
       }
       double p = it->progress;
       p = 1 - (1-p) * (1-p); // this is a east out quad tween. we can also use different tweens
       it->prev=mu_interp_animatable(it->initial,it->animable,p);
-
-      switch (it->type)
-      {
-      case PERMANENT:
-        mu_apply_override(&elem->animatable,&it->prev);
-        break;
-      case TEMPORARY:
-        mu_apply_override(&helper->animatable,&it->prev);
-        elem=helper;
-      }
-
+      // printf("received scroll val of  %d\n", it->animable.scroll.y);
       return it->prev;
 
     }
@@ -1180,14 +1218,25 @@ mu_AnimatableOverride mu_apply_animation(mu_Context *ctx, mu_Elem* elem, mu_Elem
   return (mu_AnimatableOverride){};
 }
 
+void print_binary(unsigned int n) {
+    for (int i = sizeof(n) * 8 - 1; i >= 0; i--) {
+        putchar((n & (1u << i)) ? '1' : '0');
+    }
+}
 
 void mu_draw_debug_elems(mu_Context *ctx){
   for (int i = 0; i < ctx->element_stack.idx; i++)
   {
     mu_Elem*elem=&ctx->element_stack.items[i];
-    mu_Elem helper=ctx->element_stack.items[i];
-    mu_AnimatableOverride newoverride;
-    mu_apply_animation(ctx,elem,&helper);
+    
+    // mu_apply(ctx, elem);
+    // elem->anim_override=mu_apply_animation(ctx,elem);
+    
+    mu_AnimatableOverride buff= mu_apply_animation(ctx,elem);
+    if (buff.set_flags){
+      memcpy(elem->anim_override,&buff,sizeof(mu_AnimatableOverride));
+    }
+    
 
     mu_draw_debug_clip_outline_ex(ctx, elem->rect, elem->clip,elem->animatable.border_color, elem->animatable.border_size);
     if (elem->settings&MU_EL_DEBUG){
@@ -1202,91 +1251,23 @@ void mu_draw_debug_elems(mu_Context *ctx){
 }
 
 
-void mu_handle_interaction(mu_Context *ctx){
-    for (int i = 0; i < ctx->element_stack.idx; i++)
-  {
-    mu_Elem*elem=&ctx->element_stack.items[i];
-    if (ctx->hover == elem->hash) { elem->animatable.border_color = mu_color(0,0,255,255); }
-    if (ctx->focus == elem->hash) { 
-      elem->animatable.border_color = mu_color(0,255,0,255); 
-      if(elem->settings&MU_EL_DRAGGABLE||elem->settings&MU_EL_STUTTER){
-        if (ctx->mouse_down== MU_MOUSE_LEFT){
-          elem->animatable.scroll.y+=ctx->mouse_delta.y;
-          // printf("motion");
-        }
-      }
-    }
-  }
-}
 
-
-
-void mu_handle_animation(mu_Context *ctx) {
-  printf("handlig animation\n");
-  for (int i = 0; i < ctx->element_stack.idx; i++){
-    mu_Elem* elem=&ctx->element_stack.items[i];
-    
-    if (elem->settings&MU_EL_DRAGGABLE&&(!(ctx->focus == elem->hash))&&(elem->animatable.scroll.x!=0||elem->animatable.scroll.y!=0)) {
-      int mov=0;
-      if (elem->direction==DIR_X){
-        int relativesize= elem->content_size+elem->animatable.padding*2+(elem->tree.count-1)*elem->animatable.gap;
-        mov=mu_clamp(elem->animatable.scroll.x,0,elem->rect.w-relativesize);
-        mov-=elem->animatable.scroll.x;
-        elem->animatable.scroll.x+=mov*0.1;
-      } else {
-        int relativesize= elem->content_size+elem->animatable.padding*2+(elem->tree.count-1)*elem->animatable.gap;
-        mov=mu_clamp(elem->animatable.scroll.y,elem->rect.h-relativesize,0);
-        mov-=elem->animatable.scroll.y;
-        elem->animatable.scroll.y+=mov*0.2;
-      }
-    }
-    if (elem->settings&MU_EL_STUTTER&&(!(ctx->focus == elem->hash)&&elem->cooldown)) {
-      if (elem->direction==DIR_X){
-        float mov=100000;
-        for (int i = 0; i < elem->tree.count; i++)
-        {
-          float pos=ctx->element_stack.items[elem->tree.children[i]].rect.x-elem->rect.x;
-          pos+=ctx->element_stack.items[elem->tree.children[i]].rect.w/2;
-          pos-=elem->rect.w/2;
-          mov= mu_fabsmin(pos,mov);
-        }
-        mov*=0.5;
-        if ((int)mov==0) elem->cooldown=0;
-        elem->animatable.scroll.x-=(int)mov;
-      } else {
-        float mov=100000;
-        for (int i = 0; i < elem->tree.count; i++)
-        {
-
-          float pos=ctx->element_stack.items[elem->tree.children[i]].rect.y-elem->rect.y;
-          pos+=ctx->element_stack.items[elem->tree.children[i]].rect.h/2;
-          pos-=elem->rect.h/2;
-          mov= mu_fabsmin(pos,mov);
-        }
-        mov*=0.5;
-
-        if ((int)mov==0) elem->cooldown=0;
-        elem->animatable.scroll.y-=(int)mov;
-      }
-    }
-  }
-}
 
 
 void mu_animation_update(mu_Context *ctx, int dt) { //dt is delta time
-  printf("animstack size  %d\n", ctx->anim_stack.idx);
+  // printf("animstack size  %d\n", ctx->anim_stack.idx);
 
   for (int i = ctx->anim_stack.idx-1; i >=0 ; i--)
   {
     mu_Anim *it = &ctx->anim_stack.items[i];
     
     it->progress+= (double)dt / it->time; 
-    printf("updating animation, anim index %d dt %f, time %f \n",i,(double)dt, it->time);
+    // printf("updating animation, anim index %d dt %f, time %f \n",i,(double)dt, it->time);
     if (it->time==0){
       it->progress=1;
     }
     if (it->progress >=1.0){
-      printf("anim finished");
+      // printf("anim finished\n");
       *it = ctx->anim_stack.items[--ctx->anim_stack.idx]; // if the animation is over we copy the last animation slot into the current one
     }
 
@@ -1323,19 +1304,22 @@ void mu_animation_set(mu_Context *ctx, void (*anim)(mu_Context *ctx,mu_Elem* ele
   
 }
 
-void mu_animation_add(mu_Context *ctx,int (*tween)(int* t),
+void mu_animation_add(mu_Context *ctx,
+                      int (*tween)(int* t)__attribute__((unused)),
                       int time, 
-                      mu_AnimType animtype,
                       mu_AnimatableOverride animable,
-                      int hash
+                      unsigned int hash
                     ){
+
   for (int i = 0; i < ctx->anim_stack.idx; i++)
   {
     mu_Anim *anim = &ctx->anim_stack.items[i];
     if (anim->hash==hash){
+
       anim->initial= anim->prev;
-      anim->time=time;
-      anim->progress=0;
+      anim->time=time;      
+      anim->progress=(time==0) ? 1 : 0;
+
       return;
       // if (animable.set_flags != anim->animable.set_flags){
         
@@ -1343,15 +1327,15 @@ void mu_animation_add(mu_Context *ctx,int (*tween)(int* t),
     }
   }
   if (ctx->anim_stack.idx<MU_ANIMSTACK_SIZE){
-    printf("adding animaiton");
+    // printf("adding animaiton");
     ctx->anim_stack.items[ctx->anim_stack.idx++]=(mu_Anim) {
-      animtype,
       animable,
       hash,
       NULL,
-      0,
+      (time==0) ? 1 : 0,
       time,
-
+      animable,
+      animable
     };
   }
 
@@ -1431,8 +1415,7 @@ void mu_end_elem_window(mu_Context *ctx) {
   mu_resize(ctx);
   mu_apply_size(ctx);
   mu_adjust_elem_positions(ctx);
-  mu_handle_interaction(ctx);
-  mu_handle_animation(ctx);
+
   mu_draw_debug_elems(ctx);
   mu_animation_update(ctx, ctx->dt);
 

@@ -25,8 +25,10 @@ extern "C" {
 #define MU_IDSTACK_SIZE         32
 #define MU_LAYOUTSTACK_SIZE     16
 #define MU_ELEMENTSTACK_SIZE    256
-#define MU_ANIMSTACK_SIZE        256
+#define MU_ANIMSTACK_SIZE       256
 #define MU_CONTAINERPOOL_SIZE   48
+#define MU_ELEMENTPOOL_SIZE     128
+
 #define MU_TREENODEPOOL_SIZE    48
 #define MU_MAX_WIDTHS           16
 #define MU_MAX_CHILDREN         16
@@ -197,10 +199,7 @@ typedef enum {
     DIR_Y = 0
 } mu_Dir;
 
-typedef enum {
-    PERMANENT = 1,
-    TEMPORARY = 0
-} mu_AnimType;
+
 
 typedef struct {
   int children[MU_MAX_CHILDREN]; // id of children
@@ -287,20 +286,19 @@ typedef struct {
   int content_size; //TOTAL SIZE OF ALL CHILDREN ELEMENTS TOGETHER (without padding or gap)
   int idx;
   int state;
-  unsigned int hash;
+  mu_Id hash;
   signed char tier;
   int settings;
   signed char cooldown;
   mu_Animatable animatable;
-
+  mu_AnimatableOverride *anim_override;
 } mu_Elem;
 
 
 
 typedef struct {
-  mu_AnimType type;
   mu_AnimatableOverride animable;
-  int hash;
+  mu_Id hash;
   int (*tween)(int t);
   double progress, time;
   mu_AnimatableOverride initial,prev;
@@ -316,6 +314,10 @@ typedef struct {
   int open;
 } mu_Container;
 
+typedef struct {
+  mu_AnimatableOverride anim_override;
+
+} mu_ElemOverride;
 
 typedef struct {
   mu_Font font;
@@ -366,6 +368,11 @@ struct mu_Context {
   /* retained state pools */
   mu_PoolItem container_pool[MU_CONTAINERPOOL_SIZE];
   mu_Container containers[MU_CONTAINERPOOL_SIZE];
+
+  mu_PoolItem override_pool[MU_ELEMENTPOOL_SIZE];
+  mu_AnimatableOverride overrides[MU_ELEMENTPOOL_SIZE];
+
+  
   /* input state */
   mu_Vec2 mouse_pos;
   mu_Vec2 last_mouse_pos;
@@ -477,15 +484,13 @@ void mu_draw_debug_elems(mu_Context *ctx);
 void mu_print_debug_tree(mu_Context *ctx);
 int mu_begin_elem_window_ex(mu_Context *ctx, const char *title, mu_Rect rect, int opt);
 void mu_end_elem_window(mu_Context *ctx);
-void mu_handle_interaction(mu_Context *ctx);
 void mu_add_text_to_elem(mu_Context *ctx,const char* text);
 void mu_set_global_style(mu_Context *ctx,mu_Animatable style);
 void mu_animation_set(mu_Context *ctx,void (*anim)(mu_Context *ctx, mu_Elem* elem));
 void mu_animation_add(mu_Context *ctx,int (*tween)(int* t),
                       int time, 
-                      mu_AnimType animtype,
                       mu_AnimatableOverride animable,
-                      int hash
+                      unsigned int hash
                     );
 
 #ifdef __cplusplus
