@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "microui_flex.h"
+#include "micro_flexbox.h"
 #include <SDL2/SDL.h>
 
 
@@ -366,7 +366,7 @@ static mu_AnimatableOverride* get_override(mu_Context *ctx,mu_Id id) {
     return &ctx->overrides[idx];
   }
   /* overrde not found in pool: init new container */
-  printf("ADDING ANIM\n");
+  // printf("ADDING ANIM\n");
   idx = mu_pool_init(ctx, ctx->override_pool, MU_ELEMENTPOOL_SIZE, id);
   // printf("adding new override with idx %d and id %d\n", idx, ctx->override_pool[idx].id);
 
@@ -407,7 +407,7 @@ int mu_pool_init(mu_Context *ctx, mu_PoolItem *items, int len, mu_Id id) {
       n = i;
     }
   }
-  printf("res n %d, ID %d\n",n,(int)items[n].id);// TODO FIX POOL PROBLEM
+  // printf("res n %d, ID %d\n",n,(int)items[n].id);// TODO FIX POOL PROBLEM
   expect(n > -1);
   items[n].id = id;
   mu_pool_update(ctx, items, n);

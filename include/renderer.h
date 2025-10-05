@@ -7,7 +7,7 @@ extern "C" {
 
 
 
-#include "microui_flex.h"
+#include "micro_flexbox.h"
 void r_init(void);
 void r_draw_rect(mu_Rect rect, mu_Color color);
 void r_draw_text(const char *text,mu_Font font, mu_Vec2 pos, mu_Color color);

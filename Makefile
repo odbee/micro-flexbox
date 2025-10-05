@@ -20,7 +20,7 @@ TARGET = main
 
 # The object files for the project
 # This is a list of all your .o files
-OBJS = main.o renderer.o microui_flex.o
+OBJS = main.o renderer.o micro_flexbox.o
 
 
 # The default target. It depends on the object files.

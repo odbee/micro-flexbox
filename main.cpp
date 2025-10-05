@@ -1,6 +1,6 @@
 
 #include "renderer.h"
-#include "microui_flex.h"
+#include "micro_flexbox.h"
 
 
 #include <GL/gl.h>    // This is often included by GLEW, but it's good practice to include it
@@ -110,12 +110,12 @@ void snaptoclosestchild(mu_Context *ctx, mu_Elem* elem) {
       
       int pos = (child->rect.y + child->rect.h / 2)
                 - (elem->rect.y + elem->rect.h / 2);
-      printf("pos %d\n", pos);
+      // printf("pos %d\n", pos);
       mov= (abs(pos) < abs(mov) ? (pos) : (mov));
     }
     anim.set_flags=MU_STYLE_SCROLL_Y;
     anim.scroll.y=elem->anim_override->scroll.y-mov;
-    printf("moving to %d\n", anim.scroll.y);
+    // printf("moving to %d\n", anim.scroll.y);
 
     mu_animation_add(ctx,0,300,anim,elem->hash);
   }
@@ -222,13 +222,6 @@ static void layout(mu_Context *ctx) {
 
 
 
-static void process_frame(mu_Context *ctx) {
-  
-  mu_begin(ctx);
-  layout(ctx);
-  mu_end(ctx);
-}
-
 
 
 constexpr std::array<char, 256> create_button_map() {
@@ -328,7 +321,6 @@ int main (int argc, char *argv[]) {
         mu_animation_update(ctx);
 
         mu_end(ctx);
-
 
 
         /* render */
