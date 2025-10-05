@@ -71,7 +71,6 @@ static mu_Animatable isostyle = {
 
 void cooldown(mu_Context *ctx, mu_Elem* elem) {
       mu_AnimatableOverride anim;
-      
       int mov=0;
       if (elem->direction==DIR_X){
         int relativesize= elem->content_size+elem->animatable.padding*2+(elem->tree.count-1)*elem->animatable.gap;
@@ -87,9 +86,40 @@ void cooldown(mu_Context *ctx, mu_Elem* elem) {
         anim.scroll.y=mov;
         mu_animation_add(ctx,0,100,anim,elem->hash);
       }
-    
 }
 
+void snaptoclosestchild(mu_Context *ctx, mu_Elem* elem) {
+  mu_AnimatableOverride anim;
+  if (elem->direction==DIR_X){
+    int mov=100000;
+    for (int i = 0; i < elem->tree.count; i++)
+    {
+      int pos=ctx->element_stack.items[elem->tree.children[i]].rect.x-elem->rect.x;
+      pos+=ctx->element_stack.items[elem->tree.children[i]].rect.w/2;
+      pos-=elem->rect.w/2;
+      mov= (abs(mov) < abs(pos) ? (mov) : (pos));
+    }
+    anim.set_flags=MU_STYLE_SCROLL_X;
+    anim.scroll.x=0;
+    mu_animation_add(ctx,0,1000,anim,elem->hash);
+  } else {
+    int mov=100000;
+    for (int i = 0; i < elem->tree.count; i++)
+    {
+      mu_Elem* child= &ctx->element_stack.items[elem->tree.children[i]];
+      
+      int pos = (child->rect.y + child->rect.h / 2)
+                - (elem->rect.y + elem->rect.h / 2);
+      printf("pos %d\n", pos);
+      mov= (abs(pos) < abs(mov) ? (pos) : (mov));
+    }
+    anim.set_flags=MU_STYLE_SCROLL_Y;
+    anim.scroll.y=elem->anim_override->scroll.y-mov;
+    printf("moving to %d\n", anim.scroll.y);
+
+    mu_animation_add(ctx,0,300,anim,elem->hash);
+  }
+}
 
 void drag(mu_Context *ctx, mu_Elem* elem) {
       mu_AnimatableOverride anim;
@@ -109,7 +139,7 @@ void drag(mu_Context *ctx, mu_Elem* elem) {
 
 static void layout(mu_Context *ctx) {
   
-  if (mu_begin_elem_window_ex(ctx,"MAIN LAYOUT",mu_rect(0,0,width,height),MU_OPT_NOTITLE|MU_OPT_NORESIZE|MU_OPT_NOFRAME)){
+  if (mu_begin_elem_window_ex(ctx,"MAIN LAYOUT",mu_rect(0,0,width,height))){
     mu_begin_elem(ctx,0,30);
       mu_begin_elem_ex(ctx,-1,1,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),0);
         mu_add_text_to_elem(ctx,"REC");
@@ -132,7 +162,7 @@ static void layout(mu_Context *ctx) {
         ctx->animatable=&isostyle;
         switch(mu_begin_elem_ex(ctx,0.9,80,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),MU_EL_CLICKABLE|MU_EL_STUTTER)){
           case MU_STATE_UNFOCUSED:
-            mu_animation_set(ctx,cooldown);
+            mu_animation_set(ctx,snaptoclosestchild);
             break;
           case MU_STATE_FOCUSED:
             mu_animation_set(ctx,drag);
@@ -285,7 +315,21 @@ int main (int argc, char *argv[]) {
         }
 
         /* process frame */
-        process_frame(ctx);
+
+
+        mu_begin(ctx);
+        layout(ctx);
+
+        mu_resize(ctx);
+        mu_apply_size(ctx);
+        mu_adjust_elem_positions(ctx);
+        mu_animaton_runqueue(ctx);
+        mu_draw_debug_elems(ctx);
+        mu_animation_update(ctx);
+
+        mu_end(ctx);
+
+
 
         /* render */
         r_clear(mu_color(bg[0], bg[1], bg[2], 255));

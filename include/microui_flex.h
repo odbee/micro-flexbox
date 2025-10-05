@@ -26,6 +26,7 @@ extern "C" {
 #define MU_LAYOUTSTACK_SIZE     16
 #define MU_ELEMENTSTACK_SIZE    256
 #define MU_ANIMSTACK_SIZE       256
+#define MU_ANIMQUEUE_SIZE       16
 #define MU_CONTAINERPOOL_SIZE   48
 #define MU_ELEMENTPOOL_SIZE     128
 
@@ -159,7 +160,7 @@ enum {
 
 
 typedef struct mu_Context mu_Context;
-typedef unsigned mu_Id;
+typedef unsigned int mu_Id;
 typedef MU_REAL mu_Real;
 typedef void* mu_Font;
 
@@ -331,6 +332,14 @@ typedef struct {
   mu_Color colors[MU_COLOR_MAX];
 } mu_Style;
 
+typedef void (*mu_anim_func)(mu_Context *ctx, mu_Elem *elem);
+
+typedef struct {
+  mu_anim_func func;
+  mu_Elem* elem;
+} mu_AnimQueueElem;
+
+
 struct mu_Context {
   /* callbacks */
   int (*text_width)(mu_Font font, const char *str, int len);
@@ -365,6 +374,9 @@ struct mu_Context {
   mu_stack(mu_Id, MU_IDSTACK_SIZE) id_stack;
   mu_stack(mu_Elem, MU_ELEMENTSTACK_SIZE) element_stack;
   mu_stack(mu_Anim, MU_ANIMSTACK_SIZE) anim_stack;
+
+  mu_stack(mu_AnimQueueElem,MU_ANIMQUEUE_SIZE) anim_queue;
+
   /* retained state pools */
   mu_PoolItem container_pool[MU_CONTAINERPOOL_SIZE];
   mu_Container containers[MU_CONTAINERPOOL_SIZE];
@@ -482,17 +494,19 @@ void mu_apply_size(mu_Context *ctx);
 void mu_adjust_elem_positions(mu_Context *ctx);
 void mu_draw_debug_elems(mu_Context *ctx);
 void mu_print_debug_tree(mu_Context *ctx);
-int mu_begin_elem_window_ex(mu_Context *ctx, const char *title, mu_Rect rect, int opt);
+int mu_begin_elem_window_ex(mu_Context *ctx, const char *title, mu_Rect rect);
 void mu_end_elem_window(mu_Context *ctx);
 void mu_add_text_to_elem(mu_Context *ctx,const char* text);
 void mu_set_global_style(mu_Context *ctx,mu_Animatable style);
-void mu_animation_set(mu_Context *ctx,void (*anim)(mu_Context *ctx, mu_Elem* elem));
+void mu_animation_set(mu_Context *ctx,mu_anim_func anim);
 void mu_animation_add(mu_Context *ctx,int (*tween)(int* t),
                       int time, 
                       mu_AnimatableOverride animable,
                       unsigned int hash
                     );
-
+void mu_animation_update(mu_Context *ctx);
+void mu_animaton_runqueue(mu_Context *ctx);
+void mu_push_unclipped(mu_Context *ctx);
 #ifdef __cplusplus
 }
 #endif

@@ -209,12 +209,10 @@ void mu_begin(mu_Context *ctx) {
 /// This function is called at the end of each frame's update. It performs
 /// final cleanup and prepares the context for rendering. It verifies
 /// stack consistency, handles scroll input, manages focus and hover states,
-/// resets input variables, sorts all root containers by z-index, and
+/// resets input variables and
 /// links their command lists to ensure a correct drawing order.
 void mu_end(mu_Context *ctx) {
-  int i, n;
   /* check stacks */
-  expect(ctx->container_stack.idx == 0);
   expect(ctx->clip_stack.idx      == 0);
   expect(ctx->id_stack.idx        == 0);
 
@@ -229,26 +227,6 @@ void mu_end(mu_Context *ctx) {
   ctx->scroll_delta = mu_vec2(0, 0);
   ctx->last_mouse_pos = ctx->mouse_pos;
   
-  /* sort root containers by zindex */
-  n = ctx->root_list.idx;
-
-  /* set root container jump commands */ //TODO CHECK THIS
-  for (i = 0; i < n; i++) {
-    mu_Container *cnt = ctx->root_list.items[i];
-    /* if this is the first container then make the first command jump to it.
-    ** otherwise set the previous container's tail to jump to this one */
-    if (i == 0) {
-      mu_Command *cmd = (mu_Command*) ctx->command_list.items;
-      cmd->jump.dst = (char*) cnt->head + sizeof(mu_JumpCommand);
-    } else {
-      mu_Container *prev = ctx->root_list.items[i - 1];
-      prev->tail->jump.dst = (char*) cnt->head + sizeof(mu_JumpCommand);
-    }
-    /* make the last container's tail jump to the end of command list */
-    if (i == n - 1) {
-      cnt->tail->jump.dst = ctx->command_list.items + ctx->command_list.idx;
-    }
-  }
 
   
 }
@@ -373,68 +351,10 @@ int mu_check_clip_ex(mu_Rect r, mu_Rect cr) {
 
 
 
-/// @brief Finalizes and ends the scope of the current container.
-/// @param ctx The MicroUI context.
-///
-/// This function calculates the container's total content size based on the
-/// dimensions of the widgets added to it. It then ends the container's scope by
-/// removing the container, its layout, and its ID from their respective stacks.
-///
-/// Calculates content size: This is done to determine the total space
-/// needed by all widgets within the container. This information is
-/// used to correctly render scrollbars and for auto-sizing the container
-/// to fit its content.
-static void pop_container(mu_Context *ctx) {
 
-  /* pop container, layout and id */
-  pop(ctx->container_stack);
-  // pop(ctx->layout_stack);
-  mu_pop_id(ctx);
-}
 
-/// @brief Returns a pointer to the current container on the stack.
-/// @param ctx The MicroUI context.
-/// @return A pointer to the top-most mu_Container on the stack.
-///
-/// This function provides access to the currently active container. It asserts
-/// that the container stack is not empty before returning the top-most
-/// container. The function does not modify the stack.
-mu_Container* mu_get_current_container(mu_Context *ctx) {
-  expect(ctx->container_stack.idx > 0);
-  return ctx->container_stack.items[ ctx->container_stack.idx - 1 ];
-}
 
-/// @brief Retrieves or creates a container from the context's container pool.
-/// @param ctx The MicroUI context.
-/// @param id The unique identifier of the container.
-/// @param opt A bitmask of options, such as MU_OPT_CLOSED.
-/// @return A pointer to the requested mu_Container, or NULL if not found and
-///         MU_OPT_CLOSED is set.
-///
-/// This function first attempts to find an existing container in the context's
-/// pool. If found, it updates the container's status as recently used and
-/// returns it. If a container with the given ID is not found, it checks the
-/// options. If the MU_OPT_CLOSED flag is set, it returns NULL. Otherwise, it
-/// initializes a new container from the pool, marks it as open, and returns
-/// a pointer to it.
-static mu_Container* get_container(mu_Context *ctx, mu_Id id, int opt) {
-  mu_Container *cnt;
-  /* try to get existing container from pool */
-  int idx = mu_pool_get(ctx, ctx->container_pool, MU_CONTAINERPOOL_SIZE, id);
-  if (idx >= 0) {
-    if (ctx->containers[idx].open || ~opt & MU_OPT_CLOSED) {
-      mu_pool_update(ctx, ctx->container_pool, idx);
-    }
-    return &ctx->containers[idx];
-  }
-  if (opt & MU_OPT_CLOSED) { return NULL; }
-  /* container not found in pool: init new container */
-  idx = mu_pool_init(ctx, ctx->container_pool, MU_CONTAINERPOOL_SIZE, id);
-  cnt = &ctx->containers[idx];
-  memset(cnt, 0, sizeof(*cnt));
-  cnt->open = 1;
-  return cnt;
-}
+
 
 
 static mu_AnimatableOverride* get_override(mu_Context *ctx,mu_Id id) {
@@ -446,7 +366,7 @@ static mu_AnimatableOverride* get_override(mu_Context *ctx,mu_Id id) {
     return &ctx->overrides[idx];
   }
   /* overrde not found in pool: init new container */
-
+  printf("ADDING ANIM\n");
   idx = mu_pool_init(ctx, ctx->override_pool, MU_ELEMENTPOOL_SIZE, id);
   // printf("adding new override with idx %d and id %d\n", idx, ctx->override_pool[idx].id);
 
@@ -462,22 +382,6 @@ static mu_AnimatableOverride* get_override(mu_Context *ctx,mu_Id id) {
 mu_AnimatableOverride* mu_get_override(mu_Context *ctx,mu_Id hash) {
   return get_override(ctx,hash);
 }
-
-/// @brief Retrieves or creates a container using a string name.
-/// @param ctx The MicroUI context.
-/// @param name The string name of the container.
-/// @return A pointer to the requested mu_Container.
-///
-/// This  provides a public interface for
-/// getting a container. It automatically generates a unique ID from the
-/// provided name and then calls the internal `get_container` function to
-/// perform the retrieval or creation.
-
-mu_Container* mu_get_container(mu_Context *ctx, const char *name) {
-  mu_Id id = mu_get_id(ctx, name, strlen(name));
-  return get_container(ctx, id, 0);
-}
-
 
 
 /*============================================================================
@@ -503,6 +407,7 @@ int mu_pool_init(mu_Context *ctx, mu_PoolItem *items, int len, mu_Id id) {
       n = i;
     }
   }
+  printf("res n %d, ID %d\n",n,(int)items[n].id);// TODO FIX POOL PROBLEM
   expect(n > -1);
   items[n].id = id;
   mu_pool_update(ctx, items, n);
@@ -632,21 +537,7 @@ int mu_next_command(mu_Context *ctx, mu_Command **cmd) {
   return 0;
 }
 
-/// @brief Pushes a jump command onto the command list.
-/// @param ctx The MicroUI context.
-/// @param dst A pointer to the destination command to jump to.
-/// @return A pointer to the newly created jump command.
-///
-/// This is a utility function that pushes a `MU_COMMAND_JUMP` onto the command
-/// list. A jump command is used by the renderer to efficiently skip over
-/// sections of the command list (e.g., commands for clipped widgets) by
-/// redirecting the command list iterator to a new location.
-static mu_Command* push_jump(mu_Context *ctx, mu_Command *dst) {
-  mu_Command *cmd;
-  cmd = mu_push_command(ctx, MU_COMMAND_JUMP, sizeof(mu_JumpCommand));
-  cmd->jump.dst = dst;
-  return cmd;
-}
+
 
 /// @brief Adds a clipping command to the command list.
 /// @param ctx The MicroUI context.
@@ -1112,8 +1003,10 @@ void mu_adjust_children_positions(mu_Context *ctx,mu_Elem* elem){
 
 void mu_adjust_elem_positions(mu_Context *ctx)
 {
+  mu_push_unclipped(ctx);
   mu_adjust_children_positions(ctx,&ctx->element_stack.items[0]);
-  
+  mu_pop_clip_rect(ctx);
+
 }
 
 static inline float lerp_float(float a, float b, float t) {
@@ -1254,9 +1147,9 @@ void mu_draw_debug_elems(mu_Context *ctx){
 
 
 
-void mu_animation_update(mu_Context *ctx, int dt) { //dt is delta time
+void mu_animation_update(mu_Context *ctx) { //dt is delta time
   // printf("animstack size  %d\n", ctx->anim_stack.idx);
-
+  int dt=ctx->dt;
   for (int i = ctx->anim_stack.idx-1; i >=0 ; i--)
   {
     mu_Anim *it = &ctx->anim_stack.items[i];
@@ -1297,10 +1190,15 @@ void mu_add_text_to_elem(mu_Context *ctx,const char* text) {
   elem->text.str=text;
 }
 
-void mu_animation_set(mu_Context *ctx, void (*anim)(mu_Context *ctx,mu_Elem* elem))
+void mu_animation_set(mu_Context *ctx, mu_anim_func anim)
 {
   mu_Elem* elem= &ctx->element_stack.items[ctx->element_stack.idx-1];
-  anim(ctx,elem);
+  if (ctx->anim_queue.idx<MU_ANIMQUEUE_SIZE){
+    ctx->anim_queue.items[ctx->anim_queue.idx++]=(mu_AnimQueueElem){anim,elem}; // IF WE ADD MORE THAN WE HAVE SPACE IN THE QUEUE WE GET AIN ERROR
+  } else{
+    printf("ANIM QUEUE NOT PROPERLY INITIATED");
+  }
+  
   
 }
 
@@ -1342,61 +1240,26 @@ void mu_animation_add(mu_Context *ctx,
   
 }
 
-/// @brief Begins a new root-level container.
-/// @param ctx The MicroUI context.
-/// @param cnt A pointer to the container to be set up as a root container.
-///
-/// This private helper function performs the initial setup for a root-level
-/// container like a window. It pushes the container onto both the main container
-/// stack and a separate root list for Z-order management. It also queues a
-/// special drawing command that allows its contents to be reordered based on
-/// Z-index. The function checks if the mouse is over the container and, if it
-/// has a higher Z-index than the current hover root, sets it as the new hover
-/// root. Finally, it resets the clipping for the container to prevent it from
-/// being clipped by any parent containers.
-static void begin_root_container(mu_Context *ctx, mu_Container *cnt) {
-  push(ctx->container_stack, cnt);
-  /* push container to roots list and push head command */
-  push(ctx->root_list, cnt);
-  cnt->head = push_jump(ctx, NULL);
-  /* clipping is reset here in case a root-container is made within
-  ** another root-containers's begin/end block; this prevents the inner
-  ** root-container being clipped to the outer */
-  push(ctx->clip_stack, unclipped_rect);
+void mu_animaton_runqueue(mu_Context *ctx)
+{
+  for (int i = ctx->anim_queue.idx-1; i >=0 ; i--) {
+    ctx->anim_queue.items[i].func(ctx,ctx->anim_queue.items[i].elem);
+    ctx->anim_queue.idx--;
+  }
 }
 
-/// @brief Finalizes a root-level container scope.
-/// @param ctx The MicroUI context.
-///
-/// This private helper function is the counterpart to `begin_root_container`.
-/// It finalizes the drawing and state management for a root container. It adds
-/// a "tail" jump command to the command list and updates the "head" jump
-/// command's destination. This mechanism is crucial for enabling the library's
-/// Z-order drawing system. The function also restores the clipping and container
-/// stacks to their state before `begin_root_container` was called.
-static void end_root_container(mu_Context *ctx) {
-  /* push tail 'goto' jump command and set head 'skip' command. the final steps
-  ** on initing these are done in mu_end() */
-  mu_Container *cnt = mu_get_current_container(ctx);
-  cnt->tail = push_jump(ctx, NULL);
-  cnt->head->jump.dst = ctx->command_list.items + ctx->command_list.idx;
-  /* pop base clip rect and container */
-  mu_pop_clip_rect(ctx);
-  pop_container(ctx);
+void mu_push_unclipped(mu_Context *ctx)
+{
+    push(ctx->clip_stack, unclipped_rect);
+
 }
 
-
-int mu_begin_elem_window_ex(mu_Context *ctx, const char *title, mu_Rect rect, int opt) {
-  mu_Rect body;
+int mu_begin_elem_window_ex(mu_Context *ctx, const char *title, mu_Rect rect) {
   mu_Id id = mu_get_id(ctx, title, strlen(title));
-  mu_Container *cnt = get_container(ctx, id, opt);
-  if (!cnt || !cnt->open) { return 0; }
   push(ctx->id_stack, id);
+  push(ctx->clip_stack, unclipped_rect);
 
-  if (cnt->rect.w == 0) { cnt->rect = rect; }
-  begin_root_container(ctx, cnt);
-  rect = body = cnt->rect;
-  mu_begin_elem_ex(ctx,cnt->rect.w,cnt->rect.h,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),0);
+  mu_begin_elem_ex(ctx,rect.w,rect.h,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),0);
 
   return MU_RES_ACTIVE;
 }
@@ -1412,13 +1275,9 @@ int mu_begin_elem_window_ex(mu_Context *ctx, const char *title, mu_Rect rect, in
 
 void mu_end_elem_window(mu_Context *ctx) {
   mu_end_elem(ctx);
-  mu_resize(ctx);
-  mu_apply_size(ctx);
-  mu_adjust_elem_positions(ctx);
 
-  mu_draw_debug_elems(ctx);
-  mu_animation_update(ctx, ctx->dt);
+  mu_pop_clip_rect(ctx);
+  mu_pop_id(ctx);
 
   // mu_print_debug_tree(ctx);
-  end_root_container(ctx);
 }
