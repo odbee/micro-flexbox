@@ -1,8 +1,8 @@
 
 #include "renderer.h"
 #include "micro_flexbox.h"
-
-
+#include "micro_animations.h"
+#include "micro_widgets.h"
 #include <GL/gl.h>    // This is often included by GLEW, but it's good practice to include it
 #include <SDL2/SDL_ttf.h>
 #include <SDL2/SDL.h>
@@ -22,7 +22,7 @@ unsigned int rightbarwidth=100;
 
 mu_Font q_font;
 
-static mu_Animatable newstyle = {
+static mu_Style newstyle = {
 
   { 230, 200, 0, 255 }, /* border_color */
   { 20, 20, 20, 255 },  /* bg_color */
@@ -37,7 +37,7 @@ static mu_Animatable newstyle = {
   {0,0}
 };
 
-static mu_Animatable itemstyle = {
+static mu_Style itemstyle = {
 
   { 230, 200, 0, 0 }, /* border_color */
   { 20, 20, 20, 255 },  /* bg_color */
@@ -53,7 +53,7 @@ static mu_Animatable itemstyle = {
     {0,0}
 };
 
-static mu_Animatable isostyle = {
+static mu_Style isostyle = {
 
   { 230, 200, 0, 255 }, /* border_color */
   { 20, 20, 20, 255 },  /* bg_color */
@@ -69,72 +69,6 @@ static mu_Animatable isostyle = {
   {0,0}
 };
 
-void cooldown(mu_Context *ctx, mu_Elem* elem) {
-      mu_AnimatableOverride anim;
-      int mov=0;
-      if (elem->direction==DIR_X){
-        int relativesize= elem->content_size+elem->animatable.padding*2+(elem->tree.count-1)*elem->animatable.gap;
-        mov=mu_clamp(elem->anim_override->scroll.x,0,elem->rect.w-relativesize);
-        anim.set_flags=MU_STYLE_SCROLL_X;
-        anim.scroll.x=mov;
-        mu_animation_add(ctx,0,100,anim,elem->hash);
-      } else {
-        int relativesize= elem->content_size+elem->animatable.padding*2+(elem->tree.count-1)*elem->animatable.gap;
-        mov=mu_clamp(elem->anim_override->scroll.y,elem->rect.h-relativesize,0);
-        // mov-=elem->anim_override->scroll.y;
-        anim.set_flags=MU_STYLE_SCROLL_Y;
-        anim.scroll.y=mov;
-        mu_animation_add(ctx,0,100,anim,elem->hash);
-      }
-}
-
-void snaptoclosestchild(mu_Context *ctx, mu_Elem* elem) {
-  mu_AnimatableOverride anim;
-  if (elem->direction==DIR_X){
-    int mov=100000;
-    for (int i = 0; i < elem->tree.count; i++)
-    {
-      int pos=ctx->element_stack.items[elem->tree.children[i]].rect.x-elem->rect.x;
-      pos+=ctx->element_stack.items[elem->tree.children[i]].rect.w/2;
-      pos-=elem->rect.w/2;
-      mov= (abs(mov) < abs(pos) ? (mov) : (pos));
-    }
-    anim.set_flags=MU_STYLE_SCROLL_X;
-    anim.scroll.x=0;
-    mu_animation_add(ctx,0,1000,anim,elem->hash);
-  } else {
-    int mov=100000;
-    for (int i = 0; i < elem->tree.count; i++)
-    {
-      mu_Elem* child= &ctx->element_stack.items[elem->tree.children[i]];
-      
-      int pos = (child->rect.y + child->rect.h / 2)
-                - (elem->rect.y + elem->rect.h / 2);
-      // printf("pos %d\n", pos);
-      mov= (abs(pos) < abs(mov) ? (pos) : (mov));
-    }
-    anim.set_flags=MU_STYLE_SCROLL_Y;
-    anim.scroll.y=elem->anim_override->scroll.y-mov;
-    // printf("moving to %d\n", anim.scroll.y);
-
-    mu_animation_add(ctx,0,300,anim,elem->hash);
-  }
-}
-
-void drag(mu_Context *ctx, mu_Elem* elem) {
-      mu_AnimatableOverride anim;
-      int mov=0;
-      if (ctx->mouse_down== MU_MOUSE_LEFT){
-        mov=elem->anim_override->scroll.y+ctx->mouse_delta.y;
-
-        // printf("motion\n");
-
-        anim.set_flags=MU_STYLE_SCROLL_Y;
-        anim.scroll.y=mov;
-        mu_animation_add(ctx,0,0,anim,elem->hash);
-      }
-    
-}
 
 
 static void layout(mu_Context *ctx) {
@@ -157,51 +91,25 @@ static void layout(mu_Context *ctx) {
       
     mu_end_elem(ctx);
     mu_begin_elem_ex(ctx,1,0,DIR_X,(MU_ALIGN_BOTTOM|MU_ALIGN_LEFT),0);
-      mu_begin_elem_ex(ctx,90,1,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_CENTER),0);
+      mu_adjust_style(ctx,
+          (mu_StyleOverride){
+              .set_flags =    MU_STYLE_GAP,
 
-        ctx->animatable=&isostyle;
-        switch(mu_begin_elem_ex(ctx,0.9,80,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),MU_EL_CLICKABLE|MU_EL_STUTTER)){
-          case MU_STATE_UNFOCUSED:
-            mu_animation_set(ctx,snaptoclosestchild);
-            break;
-          case MU_STATE_FOCUSED:
-            mu_animation_set(ctx,drag);
-            break;
+              .gap = 15,
 
-          
-          case MU_STATE_JUSTFOCUSED:
-            // for (size_t k = 0; k < MU_ELEMENTPOOL_SIZE; k++)
-            // {
-            //   printf("el %.0d id  %d\n",k, ctx->override_pool[k].id);
-            // }          
-            break;
-            // printf("FOCUSING\n");
+      });
+      mu_begin_elem_ex(ctx,90,1,DIR_Y,(MU_ALIGN_MIDDLE|MU_ALIGN_CENTER),0);
+      mu_pop_style(ctx);
+      const char* iso_entries[] = {"100", "200", "300", "400"};
+        mu_scroller(ctx,"ISO",iso_entries,4);
+        const char* aperture_entries[] = {"1.4", "2", "2.8", "4", "5.6", "8", "11"};
+        mu_scroller(ctx,"APR",aperture_entries,7);
+        const char* shutter_entries[] = {"45", "90", "180", "270", "360"};
+        mu_scroller(ctx,"SHT",shutter_entries,5);
+        const char* wb_entries[] = {"2000K", "2300K", "2800K", "3500K", "4700", "7200K", "15000K"};
+        mu_scroller(ctx,"WB",wb_entries,7);
 
-        }
-          ctx->animatable=&itemstyle;
 
-          mu_add_text_to_elem(ctx,"ISO");
-          mu_begin_elem_ex(ctx,1,30,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),0);
-            mu_add_text_to_elem(ctx,"400");
-          mu_end_elem(ctx);
-          mu_begin_elem_ex(ctx,1,30,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),0);
-            mu_add_text_to_elem(ctx,"800");
-          mu_end_elem(ctx);
-          mu_begin_elem_ex(ctx,1,30,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),0);
-            mu_add_text_to_elem(ctx,"1600");
-            ctx->animatable=&newstyle;
-
-          mu_end_elem(ctx);
-        mu_end_elem(ctx);
-        mu_begin_elem_ex(ctx,0.9,120,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),MU_EL_CLICKABLE);
-                                    mu_add_text_to_elem(ctx,"HEY");
-        mu_end_elem(ctx);  
-
-        mu_begin_elem_ex(ctx,0.9,150,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),MU_EL_CLICKABLE);
-                                            mu_add_text_to_elem(ctx,"hello");
-        mu_end_elem(ctx);  
-        mu_begin_elem_ex(ctx,0.9,120,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),MU_EL_CLICKABLE);
-        mu_end_elem(ctx);  
       mu_end_elem(ctx);
 
 
@@ -269,7 +177,9 @@ int main (int argc, char *argv[]) {
       /* init microui */
     mu_Context *ctx =(mu_Context*) malloc(sizeof(mu_Context));
     mu_init(ctx);
-    ctx->animatable=&newstyle;
+    // ctx->style=&newstyle;
+    mu_add_style(ctx,newstyle);
+    // mu_set_global_style(ctx,newstyle);
     ctx->text_width = text_width;
     ctx->text_height = text_height;
 

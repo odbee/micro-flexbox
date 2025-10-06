@@ -27,8 +27,10 @@ extern "C" {
 #define MU_ELEMENTSTACK_SIZE    256
 #define MU_ANIMSTACK_SIZE       256
 #define MU_ANIMQUEUE_SIZE       16
-#define MU_CONTAINERPOOL_SIZE   48
-#define MU_ELEMENTPOOL_SIZE     128
+#define MU_STYLESTACK_SIZE      16
+
+#define MU_CONTAINERPOOL_SIZE   128
+#define MU_ELEMENTPOOL_SIZE     256
 
 #define MU_TREENODEPOOL_SIZE    48
 #define MU_MAX_WIDTHS           16
@@ -115,7 +117,7 @@ enum {
   MU_EL_DRAGGABLE  = (1 << 2),
   MU_EL_DEBUG      = (1 << 3),
   MU_EL_STUTTER    = (1 << 4),
-
+  MU_EL_ANIMATABLE = (1 << 5)
   
 };
 
@@ -239,7 +241,28 @@ typedef struct {
   
   mu_Vec2 scroll;
 
-} mu_Animatable;
+} mu_Style;
+
+typedef struct {
+  //fixed styling
+  mu_Color* border_color;
+  mu_Color* bg_color;
+  
+  signed char* border_size;
+  signed char* gap;
+  signed char* padding;
+  //text styling
+  mu_Color* text_color;
+  mu_Font* font;
+  int* text_align;
+  //anim styling
+  mu_Color* hover_color;
+  mu_Color* focus_color;
+  
+  mu_Vec2* scroll;
+
+} mu_StyleCompound;
+
 
 #define MU_STYLE_BORDER_COLOR  (1<<0)
 #define MU_STYLE_BG_COLOR      (1<<1)
@@ -273,7 +296,7 @@ typedef struct {
   
   mu_Vec2 scroll;
 
-} mu_AnimatableOverride;
+} mu_StyleOverride;
 
 typedef struct {
   int childAlignment;// align top, center, bottom. left middle right
@@ -283,6 +306,7 @@ typedef struct {
   mu_Rect rect;
   mu_Tree tree;
   mu_Text text;
+  char text_buffer[64]; // STRUNG BUFFER
   mu_Rect clip;
   int content_size; //TOTAL SIZE OF ALL CHILDREN ELEMENTS TOGETHER (without padding or gap)
   int idx;
@@ -291,46 +315,28 @@ typedef struct {
   signed char tier;
   int settings;
   signed char cooldown;
-  mu_Animatable animatable;
-  mu_AnimatableOverride *anim_override;
+  mu_Style style;
+  mu_StyleOverride *anim_override;
+  mu_StyleCompound anim_compound;
 } mu_Elem;
 
 
 
 typedef struct {
-  mu_AnimatableOverride animable;
+  mu_StyleOverride animable;
   mu_Id hash;
   int (*tween)(int t);
   double progress, time;
-  mu_AnimatableOverride initial,prev;
+  mu_StyleOverride initial,prev;
 }   mu_Anim;
 
-typedef struct {
-  mu_Command *head, *tail;
-  mu_Rect rect;
-  mu_Rect body;
-  mu_Vec2 content_size;
-  mu_Vec2 scroll;
-  int zindex;
-  int open;
-} mu_Container;
+
 
 typedef struct {
-  mu_AnimatableOverride anim_override;
+  mu_StyleOverride anim_override;
 
 } mu_ElemOverride;
 
-typedef struct {
-  mu_Font font;
-  mu_Vec2 size;
-  int padding;
-  int spacing;
-  int indent;
-  int title_height;
-  int scrollbar_size;
-  int thumb_size;
-  mu_Color colors[MU_COLOR_MAX];
-} mu_Style;
 
 typedef void (*mu_anim_func)(mu_Context *ctx, mu_Elem *elem);
 
@@ -345,12 +351,12 @@ struct mu_Context {
   int (*text_width)(mu_Font font, const char *str, int len);
   int (*text_height)(mu_Font font);
   /* core state */
+
+
   mu_Style _style;
   mu_Style *style;
-
-  mu_Animatable _animatable;
-  mu_Animatable *animatable;
   
+  mu_Style bufstyle;
   mu_Id hover;
   mu_Id focus;
   mu_Id last_id;
@@ -362,27 +368,23 @@ struct mu_Context {
   int last_time;
   int dt; // DELTA TIME
 
-  mu_Container *scroll_target;
   char number_edit_buf[MU_MAX_FMT];
   mu_Id number_edit;
   
   /* stacks */
   mu_stack(char, MU_COMMANDLIST_SIZE) command_list;
-  mu_stack(mu_Container*, MU_ROOTLIST_SIZE) root_list;
-  mu_stack(mu_Container*, MU_CONTAINERSTACK_SIZE) container_stack;
   mu_stack(mu_Rect, MU_CLIPSTACK_SIZE) clip_stack;
   mu_stack(mu_Id, MU_IDSTACK_SIZE) id_stack;
   mu_stack(mu_Elem, MU_ELEMENTSTACK_SIZE) element_stack;
   mu_stack(mu_Anim, MU_ANIMSTACK_SIZE) anim_stack;
-
+  mu_stack(mu_Style,MU_STYLESTACK_SIZE) style_stack;
+  
   mu_stack(mu_AnimQueueElem,MU_ANIMQUEUE_SIZE) anim_queue;
 
   /* retained state pools */
-  mu_PoolItem container_pool[MU_CONTAINERPOOL_SIZE];
-  mu_Container containers[MU_CONTAINERPOOL_SIZE];
 
   mu_PoolItem override_pool[MU_ELEMENTPOOL_SIZE];
-  mu_AnimatableOverride overrides[MU_ELEMENTPOOL_SIZE];
+  mu_StyleOverride overrides[MU_ELEMENTPOOL_SIZE];
 
   
   /* input state */
@@ -415,9 +417,6 @@ void mu_push_clip_rect(mu_Context *ctx, mu_Rect rect);
 void mu_pop_clip_rect(mu_Context *ctx);
 mu_Rect mu_get_clip_rect(mu_Context *ctx);
 int mu_check_clip_ex(mu_Rect r,mu_Rect cr);
-mu_Container* mu_get_current_container(mu_Context *ctx);
-mu_Container* mu_get_container(mu_Context *ctx, const char *name);
-void mu_bring_to_front(mu_Context *ctx, mu_Container *cnt);
 
 int mu_pool_init(mu_Context *ctx, mu_PoolItem *items, int len, mu_Id id);
 int mu_pool_get(mu_Context *ctx, mu_PoolItem *items, int len, mu_Id id);
@@ -497,16 +496,20 @@ void mu_print_debug_tree(mu_Context *ctx);
 int mu_begin_elem_window_ex(mu_Context *ctx, const char *title, mu_Rect rect);
 void mu_end_elem_window(mu_Context *ctx);
 void mu_add_text_to_elem(mu_Context *ctx,const char* text);
-void mu_set_global_style(mu_Context *ctx,mu_Animatable style);
+void mu_set_global_style(mu_Context *ctx,mu_Style style);
 void mu_animation_set(mu_Context *ctx,mu_anim_func anim);
 void mu_animation_add(mu_Context *ctx,int (*tween)(int* t),
                       int time, 
-                      mu_AnimatableOverride animable,
+                      mu_StyleOverride animable,
                       unsigned int hash
                     );
 void mu_animation_update(mu_Context *ctx);
 void mu_animaton_runqueue(mu_Context *ctx);
 void mu_push_unclipped(mu_Context *ctx);
+void mu_adjust_style(mu_Context * ctx, mu_StyleOverride override);
+void mu_release_style(mu_Context *ctx);
+void mu_add_style(mu_Context*ctx, mu_Style style);
+void mu_pop_style(mu_Context *ctx);
 #ifdef __cplusplus
 }
 #endif

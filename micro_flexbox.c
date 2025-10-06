@@ -30,31 +30,8 @@
 
 static mu_Rect unclipped_rect = { 0, 0, 0x1000000, 0x1000000 };
 
+
 static mu_Style default_style = {
-  /* font | size | padding | spacing | indent */
-  NULL, { 68, 10 }, 5, 5, 24,
-  /* title_height | scrollbar_size | thumb_size */
-  24, 12, 8,
-  {
-    { 230, 230, 230, 255 }, /* MU_COLOR_TEXT */
-    { 200,  25,  25,  255 }, /* MU_COLOR_BORDER */
-    { 50,  50,  50,  255 }, /* MU_COLOR_WINDOWBG */
-    { 25,  25,  25,  255 }, /* MU_COLOR_TITLEBG */
-    { 240, 240, 240, 255 }, /* MU_COLOR_TITLETEXT */
-    { 0,   0,   0,   0   }, /* MU_COLOR_PANELBG */
-    { 75,  75,  75,  255 }, /* MU_COLOR_BUTTON */
-    { 95,  95,  95,  255 }, /* MU_COLOR_BUTTONHOVER */
-    { 115, 115, 115, 255 }, /* MU_COLOR_BUTTONFOCUS */
-    { 30,  30,  30,  255 }, /* MU_COLOR_BASE */
-    { 35,  35,  35,  255 }, /* MU_COLOR_BASEHOVER */
-    { 40,  40,  40,  255 }, /* MU_COLOR_BASEFOCUS */
-    { 43,  43,  43,  255 }, /* MU_COLOR_SCROLLBASE */
-    { 30,  30,  30,  255 }  /* MU_COLOR_SCROLLTHUMB */
-  }
-};
-
-
-static mu_Animatable default_animatable = {
   { 230, 200, 0, 255 }, /* border_color */
   { 20, 20, 20, 255 }, /* bg_color */
   1,                  /* border_size */
@@ -176,8 +153,6 @@ void mu_init(mu_Context *ctx) {
   memset(ctx, 0, sizeof(*ctx));
   ctx->_style = default_style;
   ctx->style = &ctx->_style;
-  ctx->_animatable = default_animatable;
-  ctx->animatable = &ctx->_animatable;
   
   ctx->tier=0;
 
@@ -193,7 +168,6 @@ void mu_init(mu_Context *ctx) {
 void mu_begin(mu_Context *ctx) {
   expect(ctx->text_width && ctx->text_height);
   ctx->command_list.idx = 0;
-  ctx->root_list.idx = 0;
   ctx->element_stack.idx=0;
   ctx->current_parent=NULL;
 
@@ -357,8 +331,8 @@ int mu_check_clip_ex(mu_Rect r, mu_Rect cr) {
 
 
 
-static mu_AnimatableOverride* get_override(mu_Context *ctx,mu_Id id) {
-    mu_AnimatableOverride *override;
+static mu_StyleOverride* get_override(mu_Context *ctx,mu_Id id) {
+    mu_StyleOverride *override;
   /* try to get existing overrde from pool */
   int idx = mu_pool_get(ctx, ctx->override_pool, MU_ELEMENTPOOL_SIZE, id);
   if (idx >= 0) {
@@ -373,13 +347,13 @@ static mu_AnimatableOverride* get_override(mu_Context *ctx,mu_Id id) {
   override = &ctx->overrides[idx]; 
   mu_Elem* new_elem=&ctx->element_stack.items[ctx->element_stack.idx];
   
-  memcpy( &override->border_color,&new_elem->animatable, sizeof(mu_Animatable));
+  memcpy( &override->border_color,&new_elem->style, sizeof(mu_Style));
 
   // memset(override, 0, sizeof(*override));
   return override;
 }
 
-mu_AnimatableOverride* mu_get_override(mu_Context *ctx,mu_Id hash) {
+mu_StyleOverride* mu_get_override(mu_Context *ctx,mu_Id hash) {
   return get_override(ctx,hash);
 }
 
@@ -835,7 +809,7 @@ int mu_begin_elem_ex(mu_Context *ctx, float sizex,float sizey, mu_Dir direction,
   new_elem->tree.count=0;
   new_elem->tree.parent=-1;
   new_elem->idx=newindex; //set element id after we pushed it
-  new_elem->animatable=*ctx->animatable; // THIS IS THE CULPRIT!!!!!!!
+  new_elem->style=*ctx->style; // THIS IS THE CULPRIT!!!!!!!
   new_elem->tier=ctx->tier++;
   new_elem->childAlignment=alignopts;
   new_elem->settings=settings;
@@ -865,10 +839,10 @@ void mu_end_elem(mu_Context *ctx) {
   mu_Elem*new_elem=&ctx->element_stack.items[ctx->element_stack.idx-1];
   if (new_elem->sizing.x==-1) {
     if (new_elem->text.str) {
-      new_elem->sizing.x=(float)(ctx->text_width(new_elem->animatable.font,new_elem->text.str,-1)+new_elem->animatable.padding*2);
+      new_elem->sizing.x=(float)(ctx->text_width(new_elem->style.font,new_elem->text.str,-1)+new_elem->style.padding*2);
     }
   } else if (new_elem->sizing.y==-1) {
-      new_elem->sizing.y=(float)(ctx->text_height(new_elem->animatable.font)+new_elem->animatable.padding*2);
+      new_elem->sizing.y=(float)(ctx->text_height(new_elem->style.font)+new_elem->style.padding*2);
 
   }
   ctx->tier--;
@@ -896,13 +870,13 @@ void mu_resize_children(mu_Context *ctx,mu_Elem* elem) {
       if (child->sizing.x <= 1&&child->sizing.x>0)
       {
         child->sizing.x = (child->sizing.x * elem->sizing.x); 
-        child->sizing.x -= 2*elem->animatable.padding;
-        child->sizing.x -= elem->animatable.gap*(elem->tree.count-1)*(elem->direction); //ONLY ADD GAPS TO THE ACTIVE AXIS
+        child->sizing.x -= 2*elem->style.padding;
+        child->sizing.x -= elem->style.gap*(elem->tree.count-1)*(elem->direction); //ONLY ADD GAPS TO THE ACTIVE AXIS
       }
       if (child->sizing.y <= 1&&child->sizing.y>0){
         child->sizing.y = (child->sizing.y * elem->sizing.y);
-        child->sizing.y -= 2*elem->animatable.padding;
-        child->sizing.y -= elem->animatable.gap*(elem->tree.count-1)*((elem->direction+1)%2);//ONLY ADD GAPS TO THE ACTIVE AXIS
+        child->sizing.y -= 2*elem->style.padding;
+        child->sizing.y -= elem->style.gap*(elem->tree.count-1)*((elem->direction+1)%2);//ONLY ADD GAPS TO THE ACTIVE AXIS
       }
       //ADD TO TOTAL CHILD SIZE
       totalChildSize += child->sizing.x*((elem->direction +0)%2);
@@ -912,8 +886,8 @@ void mu_resize_children(mu_Context *ctx,mu_Elem* elem) {
     for (int j =0;j<growChildren;j++){
         mu_Elem* child = listofgrowers[j];
         //TODO STILL HAVE TO CHECK IF MIN SIZE IS BIGGER THAN GROW SIZE
-        child->sizing.x+=((elem->sizing.x - adjustsize-elem->animatable.gap*(elem->tree.count-1)-elem->animatable.padding*2)/growChildren )*(elem->direction);
-        child->sizing.y+=((elem->sizing.y - adjustsize)/growChildren-elem->animatable.gap*(elem->tree.count-1)-elem->animatable.padding*2 )*((elem->direction +1)%2);
+        child->sizing.x+=((elem->sizing.x - adjustsize-elem->style.gap*(elem->tree.count-1)-elem->style.padding*2)/growChildren )*(elem->direction);
+        child->sizing.y+=((elem->sizing.y - adjustsize)/growChildren-elem->style.gap*(elem->tree.count-1)-elem->style.padding*2 )*((elem->direction +1)%2);
         totalChildSize+=child->sizing.x*(elem->direction);
         totalChildSize+=child->sizing.y*((elem->direction +1)%2);
     }
@@ -959,32 +933,32 @@ void mu_adjust_children_positions(mu_Context *ctx,mu_Elem* elem){
       child  =  &ctx->element_stack.items[elem->tree.children[i]];
       child->rect.x = elem->rect.x;
       child->rect.y = elem->rect.y;
-      child->rect.x += elem->animatable.padding;
-      child->rect.y += elem->animatable.padding;
+      child->rect.x += elem->style.padding;
+      child->rect.y += elem->style.padding;
       if (elem->direction==DIR_X){
         child->rect.x +=(elem->rect.w-elem->content_size)* m.x;
-        child->rect.x -=(2*elem->animatable.padding+(elem->tree.count-1)*elem->animatable.gap)*m.x;
+        child->rect.x -=(2*elem->style.padding+(elem->tree.count-1)*elem->style.gap)*m.x;
         child->rect.y +=(elem->rect.h-child->rect.h)*m.y;
-        child->rect.y -=(2*elem->animatable.padding)*m.y;
+        child->rect.y -=(2*elem->style.padding)*m.y;
       } else {
         child->rect.x +=(elem->rect.w-child->rect.w)*m.x;  
-        child->rect.x -=2*elem->animatable.padding*m.x;
+        child->rect.x -=2*elem->style.padding*m.x;
 
         child->rect.y +=(elem->rect.h-elem->content_size)* m.y;
-        child->rect.y -=(2*elem->animatable.padding+(elem->tree.count-1)*elem->animatable.gap)*m.y;
+        child->rect.y -=(2*elem->style.padding+(elem->tree.count-1)*elem->style.gap)*m.y;
 
       }
       child->rect.x += compoundx;
       child->rect.y += compoundy;
-      child->rect.x += elem->animatable.scroll.x;
+      child->rect.x += elem->style.scroll.x;
       if (elem->anim_override->set_flags & MU_STYLE_SCROLL_Y) {
         child->rect.y += elem->anim_override->scroll.y;
       } else {
-        child->rect.y += elem->animatable.scroll.y;
+        child->rect.y += elem->style.scroll.y;
 
       } 
-      compoundx     += (child->rect.w +elem->animatable.gap)*((elem->direction +0)%2);
-      compoundy     += (child->rect.h +elem->animatable.gap)*((elem->direction +1)%2);
+      compoundx     += (child->rect.w +elem->style.gap)*((elem->direction +0)%2);
+      compoundy     += (child->rect.h +elem->style.gap)*((elem->direction +1)%2);
 
       child->clip=mu_get_clip_rect(ctx);
 
@@ -1040,10 +1014,10 @@ static inline mu_Color lerp_color(mu_Color a, mu_Color b, float t) {
     X(MU_STYLE_SCROLL_X,     scroll.x,    lerp_float) \
     X(MU_STYLE_SCROLL_Y,     scroll.y,    lerp_float)
 
-mu_AnimatableOverride mu_interp_animatable(mu_AnimatableOverride initial,
-                                           mu_AnimatableOverride target,
+mu_StyleOverride mu_interp_style(mu_StyleOverride initial,
+                                           mu_StyleOverride target,
                                            float p) {
-    mu_AnimatableOverride result = initial;
+    mu_StyleOverride result = initial;
 
     #define X(FLAG, FIELD, LERP) \
         if (target.set_flags & FLAG) { \
@@ -1069,7 +1043,7 @@ mu_AnimatableOverride mu_interp_animatable(mu_AnimatableOverride initial,
     APPLY_FIELD(MU_STYLE_SCROLL_X,     scroll.x) \
     APPLY_FIELD(MU_STYLE_SCROLL_Y,     scroll.y)
 
-void mu_apply_override(mu_Animatable *dst, const mu_AnimatableOverride *ovr) {
+void mu_apply_override(mu_Style *dst, const mu_StyleOverride *ovr) {
     #define APPLY_FIELD(FLAG, FIELD) \
         if (ovr->set_flags & FLAG) { \
             dst->FIELD = ovr->FIELD; \
@@ -1088,7 +1062,7 @@ void mu_apply(mu_Context *ctx, mu_Elem* elem) {
     }
   }
 }
-mu_AnimatableOverride mu_apply_animation(mu_Context *ctx, mu_Elem* elem){
+mu_StyleOverride mu_apply_animation(mu_Context *ctx, mu_Elem* elem){
   
   for (int i = 0; i < ctx->anim_stack.idx; i++) 
   {
@@ -1101,14 +1075,14 @@ mu_AnimatableOverride mu_apply_animation(mu_Context *ctx, mu_Elem* elem){
       }
       double p = it->progress;
       p = 1 - (1-p) * (1-p); // this is a east out quad tween. we can also use different tweens
-      it->prev=mu_interp_animatable(it->initial,it->animable,p);
+      it->prev=mu_interp_style(it->initial,it->animable,p);
       // printf("received scroll val of  %d\n", it->animable.scroll.y);
       return it->prev;
 
     }
   }
   
-  return (mu_AnimatableOverride){};
+  return (mu_StyleOverride){};
 }
 
 void print_binary(unsigned int n) {
@@ -1125,20 +1099,20 @@ void mu_draw_debug_elems(mu_Context *ctx){
     // mu_apply(ctx, elem);
     // elem->anim_override=mu_apply_animation(ctx,elem);
     
-    mu_AnimatableOverride buff= mu_apply_animation(ctx,elem);
+    mu_StyleOverride buff= mu_apply_animation(ctx,elem);
     if (buff.set_flags){
-      memcpy(elem->anim_override,&buff,sizeof(mu_AnimatableOverride));
+      memcpy(elem->anim_override,&buff,sizeof(mu_StyleOverride));
     }
     
 
-    mu_draw_debug_clip_outline_ex(ctx, elem->rect, elem->clip,elem->animatable.border_color, elem->animatable.border_size);
+    mu_draw_debug_clip_outline_ex(ctx, elem->rect, elem->clip,elem->style.border_color, elem->style.border_size);
     if (elem->settings&MU_EL_DEBUG){
       mu_draw_rect(ctx,elem->clip,mu_color(0,0,255,50));
       mu_draw_rect(ctx,intersect_rects(elem->clip,elem->rect),mu_color(0,255,0,50));
     }
     
     if (elem->text.str) {
-      mu_draw_text_ex(ctx,elem->animatable.font,elem->text.str,sizeof(elem->text.str),mu_vec2(elem->rect.x,elem->rect.y),elem->animatable.text_color,intersect_rects(elem->clip,elem->rect),elem->rect,elem->animatable.text_align,elem->animatable.padding );
+      mu_draw_text_ex(ctx,elem->style.font,elem->text.str,sizeof(elem->text.str),mu_vec2(elem->rect.x,elem->rect.y),elem->style.text_color,intersect_rects(elem->clip,elem->rect),elem->rect,elem->style.text_align,elem->style.padding );
     }
   }
 }
@@ -1187,7 +1161,14 @@ void mu_print_debug_tree(mu_Context *ctx){
 
 void mu_add_text_to_elem(mu_Context *ctx,const char* text) {
   mu_Elem* elem= &ctx->element_stack.items[ctx->element_stack.idx-1];
+  // strncpy(elem->text_buffer, text, sizeof(elem->text_buffer) - 1);
+  // elem->text_buffer[sizeof(elem->text_buffer)-1] = '\0'; // ensure null termination
+  // elem->text.str = elem->text_buffer;
   elem->text.str=text;
+}
+
+void mu_set_global_style(mu_Context *ctx, mu_Style style)
+{
 }
 
 void mu_animation_set(mu_Context *ctx, mu_anim_func anim)
@@ -1205,7 +1186,7 @@ void mu_animation_set(mu_Context *ctx, mu_anim_func anim)
 void mu_animation_add(mu_Context *ctx,
                       int (*tween)(int* t)__attribute__((unused)),
                       int time, 
-                      mu_AnimatableOverride animable,
+                      mu_StyleOverride animable,
                       unsigned int hash
                     ){
 
@@ -1252,6 +1233,66 @@ void mu_push_unclipped(mu_Context *ctx)
 {
     push(ctx->clip_stack, unclipped_rect);
 
+}
+
+void mu_adjust_style(mu_Context *ctx, mu_StyleOverride override) {
+
+    // Copy previous style as base (optional, if you want incremental override)
+    mu_Style buf; 
+    memcpy(&buf, ctx->style, sizeof(mu_Style));
+
+    // Apply only the overridden fields
+    if (override.set_flags & MU_STYLE_BORDER_COLOR)
+        buf.border_color = override.border_color;
+
+    if (override.set_flags & MU_STYLE_BG_COLOR)
+        buf.bg_color = override.bg_color;
+
+    if (override.set_flags & MU_STYLE_BORDER_SIZE)
+        buf.border_size = override.border_size;
+
+    if (override.set_flags & MU_STYLE_GAP)
+        buf.gap = override.gap;
+
+    if (override.set_flags & MU_STYLE_PADDING)
+        buf.padding = override.padding;
+
+    if (override.set_flags & MU_STYLE_TEXT_COLOR)
+        buf.text_color = override.text_color;
+
+    if (override.set_flags & MU_STYLE_FONT)
+        buf.font = override.font;
+
+    if (override.set_flags & MU_STYLE_TEXT_ALIGN)
+        buf.text_align = override.text_align;
+
+    if (override.set_flags & MU_STYLE_HOVER_COLOR)
+        buf.hover_color = override.hover_color;
+
+    if (override.set_flags & MU_STYLE_SCROLL_X)
+        buf.scroll.x = override.scroll.x;
+
+    if (override.set_flags & MU_STYLE_SCROLL_Y)
+        buf.scroll.y = override.scroll.y;
+
+    mu_add_style(ctx, buf);
+}
+
+void mu_release_style(mu_Context *ctx) {
+    // Reset pointer to the default style
+    ctx->style = &ctx->_style;
+}
+
+void mu_add_style(mu_Context *ctx, mu_Style style)
+{
+  if(ctx->style_stack.idx<MU_STYLESTACK_SIZE-1){
+    ctx->style_stack.items[++ctx->style_stack.idx]=style;
+    ctx->style=&ctx->style_stack.items[ctx->style_stack.idx];
+  }
+}
+
+void mu_pop_style(mu_Context *ctx) {
+  ctx->style=&ctx->style_stack.items[--ctx->style_stack.idx];
 }
 
 int mu_begin_elem_window_ex(mu_Context *ctx, const char *title, mu_Rect rect) {

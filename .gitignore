@@ -3,6 +3,6 @@
 
 # Ignore object files
 *.o
-
+*.d
 # Ignore executables
 *.exe
