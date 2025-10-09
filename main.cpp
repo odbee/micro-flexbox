@@ -37,37 +37,6 @@ static mu_Style newstyle = {
   {0,0}
 };
 
-static mu_Style itemstyle = {
-
-  { 230, 200, 0, 0 }, /* border_color */
-  { 20, 20, 20, 255 },  /* bg_color */
-  1,                    /* border_size */
-  5,                    /* gap */
-  
-  5,                    /* padding */
-  { 230, 200, 0, 255 }, /* text_color */
-  &q_font,              /* font*/
-  MU_ALIGN_MIDDLE|MU_ALIGN_CENTER, /* text_align*/
-  { 180, 200, 0, 255 }, /* hover_color */
-  { 130, 200, 230, 255 }, /* focus_color */
-    {0,0}
-};
-
-static mu_Style isostyle = {
-
-  { 230, 200, 0, 255 }, /* border_color */
-  { 20, 20, 20, 255 },  /* bg_color */
-  1,                    /* border_size */
-  5,                    /* gap */
-  
-  7,                    /* padding */
-  { 230, 200, 0, 255 }, /* text_color */
-  &q_font,              /* font*/
-  MU_ALIGN_TOP|MU_ALIGN_LEFT, /* text_align*/
-  { 180, 200, 0, 255 }, /* hover_color */
-  { 130, 200, 230, 255 }, /* focus_color */
-  {0,0}
-};
 
 
 
@@ -109,14 +78,33 @@ static void layout(mu_Context *ctx) {
         const char* wb_entries[] = {"2000K", "2300K", "2800K", "3500K", "4700", "7200K", "15000K"};
         mu_scroller(ctx,"WB",wb_entries,7);
 
-
       mu_end_elem(ctx);
 
 
       mu_begin_elem_ex(ctx,0,0,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),0);
       mu_end_elem(ctx); 
 
-      mu_begin_elem_ex(ctx,90,1,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),0);
+      mu_begin_elem_ex(ctx,90,1,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_CENTER),0);
+
+        mu_begin_elem_ex(ctx,1,30,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),MU_EL_CLICKABLE|MU_EL_STUTTER);
+        mu_add_text_to_elem(ctx,"RESOLUTION");
+        mu_end_elem(ctx); 
+
+        mu_begin_elem_ex(ctx,1,30,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),MU_EL_CLICKABLE|MU_EL_STUTTER);
+        mu_add_text_to_elem(ctx,"FRAMERATE");
+        mu_end_elem(ctx); 
+
+        mu_begin_elem_ex(ctx,1,30,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),MU_EL_CLICKABLE|MU_EL_STUTTER);
+        mu_add_text_to_elem(ctx,"TOOLS");
+        mu_end_elem(ctx); 
+
+        mu_begin_elem_ex(ctx,1,0,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),MU_EL_CLICKABLE|MU_EL_STUTTER);
+
+        mu_end_elem(ctx); 
+
+        mu_begin_elem_ex(ctx,1,30,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),MU_EL_CLICKABLE|MU_EL_STUTTER);
+        mu_add_text_to_elem(ctx,"SETTINGS");
+        mu_end_elem(ctx); 
       mu_end_elem(ctx); 
 
     mu_end_elem(ctx);
@@ -127,8 +115,6 @@ static void layout(mu_Context *ctx) {
   mu_end_elem_window(ctx);
   }
 }
-
-
 
 
 
@@ -203,7 +189,7 @@ int main (int argc, char *argv[]) {
             case SDL_MOUSEBUTTONUP: {
             int b = button_map[e.button.button & 0xff];
             if (b && e.type == SDL_MOUSEBUTTONDOWN) { mu_input_mousedown(ctx, e.button.x, e.button.y, b); }
-            if (b && e.type ==   SDL_MOUSEBUTTONUP) { mu_input_mouseup(ctx, e.button.x, e.button.y, b);   }
+            if (b && e.type ==   SDL_MOUSEBUTTONUP) { mu_input_mouseup  (ctx, e.button.x, e.button.y, b); }
             break;
             }
 
@@ -211,7 +197,7 @@ int main (int argc, char *argv[]) {
             case SDL_KEYUP: {
             int c = key_map[e.key.keysym.sym & 0xff];
             if (c && e.type == SDL_KEYDOWN) { mu_input_keydown(ctx, c); }
-            if (c && e.type ==   SDL_KEYUP) { mu_input_keyup(ctx, c);   }
+            if (c && e.type ==   SDL_KEYUP) { mu_input_keyup (ctx, c);   }
             break;
             }
         }

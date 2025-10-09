@@ -37,23 +37,18 @@ void mu_scroller(mu_Context *ctx, const char * title, const char *entries[],int 
             mu_animation_set(ctx,snaptoclosestchild);
             break;
     }
-
-
     mu_add_text_to_elem(ctx,title);
     mu_pop_style(ctx);
-
     mu_adjust_style(ctx,
         (mu_StyleOverride){
             .set_flags = MU_STYLE_BORDER_SIZE | MU_STYLE_PADDING| MU_STYLE_GAP,
             .border_size=0,
             .gap = 0,
             .padding = 5,
-
     });
 
     for (int i = 0; i <size; i++)
     {
-
         mu_begin_elem_ex(ctx,1,30,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),0);
             mu_add_text_to_elem(ctx,entries[i]);
         mu_end_elem(ctx);
