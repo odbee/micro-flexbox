@@ -173,6 +173,9 @@ void mu_begin(mu_Context *ctx) {
 
   ctx->mouse_delta.x = ctx->mouse_pos.x - ctx->last_mouse_pos.x;
   ctx->mouse_delta.y = ctx->mouse_pos.y - ctx->last_mouse_pos.y;
+
+  ctx->finger_delta.x = ctx->finger_pos.x - ctx->last_finger_pos.x;
+  ctx->finger_delta.y = ctx->finger_pos.y - ctx->last_finger_pos.y;
   ctx->frame++;
 }
 
@@ -198,8 +201,10 @@ void mu_end(mu_Context *ctx) {
   ctx->key_pressed = 0;
   ctx->input_text[0] = '\0';
   ctx->mouse_pressed = 0;
+  ctx->finger_pressed = 0;
   ctx->scroll_delta = mu_vec2(0, 0);
   ctx->last_mouse_pos = ctx->mouse_pos;
+  ctx->last_finger_pos = ctx->finger_pos;
   
 
   
@@ -440,6 +445,22 @@ void mu_input_mouseup(mu_Context *ctx, int x, int y, int btn) {
   ctx->mouse_down &= ~btn;
 }
 
+void mu_input_fingermove(mu_Context *ctx, int x, int y) {
+  ctx->finger_pos = mu_vec2(x, y);
+}
+
+
+void mu_input_fingerdown(mu_Context *ctx, int x, int y) {
+  mu_input_fingermove(ctx, x, y);
+  ctx->finger_down = 1;
+  ctx->finger_pressed = 1;
+}
+
+
+void mu_input_fingerup(mu_Context *ctx, int x, int y) {
+  mu_input_fingermove(ctx, x, y);
+  ctx->finger_down = 0;
+}
 
 void mu_input_scroll(mu_Context *ctx, int x, int y) {
   ctx->scroll_delta.x += x;
@@ -716,6 +737,10 @@ int mu_mouse_over(mu_Context *ctx, mu_Rect rect) {
     rect_overlaps_vec2(mu_get_clip_rect(ctx), ctx->mouse_pos);
 }
 
+int mu_finger_over(mu_Context *ctx, mu_Rect rect) {
+  return rect_overlaps_vec2(rect, ctx->finger_pos) &&
+    rect_overlaps_vec2(mu_get_clip_rect(ctx), ctx->finger_pos);
+}
 
 
 /// @brief Updates the hover and focus state for a control.
@@ -733,28 +758,43 @@ void mu_update_element_control(mu_Context *ctx, mu_Elem* elem) {
   unsigned int id = elem->hash;
   mu_Rect rect = elem->rect;
   int mouseover = mu_mouse_over(ctx, rect);
+  int fingerover = mu_finger_over(ctx, rect);
   elem->state=MU_STATE_ACTIVE;
+
+  if (fingerover&& ctx->finger_pressed) {
+    elem->state=MU_STATE_JUSTFOCUSED;
+    mu_set_focus(ctx, id);
+    // printf("FINGER START FOCUSING %d\n",elem->idx);
+  }  
+
   if (ctx->focus == id) {
     ctx->hover = 0;
 
     ctx->updated_focus = 1;
     elem->state=MU_STATE_FOCUSED;// this means its still focused from last frame
+    // printf("FINGER STILL FOCUSING %d\n",elem->idx);
+
     if (ctx->mouse_pressed && !mouseover) { // no longer over object but still down
       mu_set_focus(ctx, 0);
       elem->state=MU_STATE_FOCUSED;
     }
-    if (!ctx->mouse_down) { // no longer clicking
+    if (!ctx->mouse_down && !ctx->finger_down) { // no longer clicking
       mu_set_focus(ctx, 0);
       // printf("NO LONGER FOCUSING\n");
       elem->state=MU_STATE_UNFOCUSED;
       elem->cooldown=1;
     }
+
   }
+
+
   if (mouseover && !ctx->mouse_down) { //TO HOVER WE NEED TO BE !MOUSEDOWN
     ctx->hover = id;
     elem->state=MU_STATE_JUSTHOVERED;
     
   }
+
+
 
   if (ctx->hover == id) { 
     elem->state=MU_STATE_HOVERED;
@@ -767,6 +807,9 @@ void mu_update_element_control(mu_Context *ctx, mu_Elem* elem) {
     }
   }
 }
+
+
+
 
 const char *int_to_str(int value) {
     static char buffer[12];  // reused on each call
@@ -887,7 +930,7 @@ void mu_resize_children(mu_Context *ctx,mu_Elem* elem) {
         mu_Elem* child = listofgrowers[j];
         //TODO STILL HAVE TO CHECK IF MIN SIZE IS BIGGER THAN GROW SIZE
         child->sizing.x+=((elem->sizing.x - adjustsize-elem->style.gap*(elem->tree.count-1)-elem->style.padding*2)/growChildren )*(elem->direction);
-        child->sizing.y+=((elem->sizing.y - adjustsize)/growChildren-elem->style.gap*(elem->tree.count-1)-elem->style.padding*2 )*((elem->direction +1)%2);
+        child->sizing.y+=((elem->sizing.y - adjustsize-elem->style.gap*(elem->tree.count-1)-elem->style.padding*2)/growChildren )*((elem->direction +1)%2);
         totalChildSize+=child->sizing.x*(elem->direction);
         totalChildSize+=child->sizing.y*((elem->direction +1)%2);
     }
@@ -1112,7 +1155,7 @@ void mu_draw_debug_elems(mu_Context *ctx){
     }
     
     if (elem->text.str) {
-      mu_draw_text_ex(ctx,elem->style.font,elem->text.str,sizeof(elem->text.str),mu_vec2(elem->rect.x,elem->rect.y),elem->style.text_color,intersect_rects(elem->clip,elem->rect),elem->rect,elem->style.text_align,elem->style.padding );
+      mu_draw_text_ex(ctx,elem->style.font,elem->text.str,strlen(elem->text.str),mu_vec2(elem->rect.x,elem->rect.y),elem->style.text_color,intersect_rects(elem->clip,elem->rect),elem->rect,elem->style.text_align,elem->style.padding );
     }
   }
 }

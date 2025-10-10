@@ -23,7 +23,7 @@ void mu_scroller(mu_Context *ctx, const char * title, const char *entries[],int 
             .text_align = 9,
 
     });
-    switch(mu_begin_elem_ex(ctx,0.9,75,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),MU_EL_CLICKABLE|MU_EL_STUTTER)){
+    switch(mu_begin_elem_ex(ctx,0,0,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),MU_EL_CLICKABLE|MU_EL_STUTTER)){
         case MU_STATE_UNFOCUSED:
             mu_animation_set(ctx,snaptoclosestchild);
             break;

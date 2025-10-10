@@ -5,11 +5,14 @@
 #endif
 #include <SDL2/SDL_opengles2.h>
 #include <assert.h>
+#include <SDL2/SDL_ttf.h>
+
 #include <string.h>
 #include "renderer.h"
 #include "atlas.inl"
 
 #define BUFFER_SIZE 16384
+
 
 // Vertex structure for interleaved data
 typedef struct {
@@ -83,6 +86,9 @@ void r_init(void) {
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
     SDL_GL_CreateContext(window);
 
+    int result = TTF_Init();
+    assert(result == 0 && "TTF_Init failed");
+
     // Create shaders
     GLuint vs = compile_shader(GL_VERTEX_SHADER, vertex_shader_src);
     GLuint fs = compile_shader(GL_FRAGMENT_SHADER, fragment_shader_src);
@@ -144,6 +150,35 @@ void r_init(void) {
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
+
+static void textflush(void) {
+    if (buf_idx == 0) return;
+    glUseProgram(shader_program);
+    
+    // Set projection matrix (orthographic)
+    float proj[16] = {
+        2.0f/width, 0, 0, 0,
+        0, -2.0f/height, 0, 0,
+        0, 0, -1, 0,
+        -1, 1, 0, 1
+    };
+    glUniformMatrix4fv(u_projection, 1, GL_FALSE, proj);
+
+    glBindVertexArray(vao);
+    
+    // Upload vertex data
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, buf_idx * 4 * sizeof(Vertex), vertices);
+    
+    // Upload index data
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+    glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, buf_idx * 6 * sizeof(GLushort), indices);
+    
+    glDrawElements(GL_TRIANGLES, buf_idx * 6, GL_UNSIGNED_SHORT, 0);
+
+    buf_idx = 0;
+}
+
 
 static void flush(void) {
     if (buf_idx == 0) return;
@@ -208,16 +243,101 @@ void r_draw_rect(mu_Rect rect, mu_Color color) {
     push_quad(rect, atlas[ATLAS_WHITE], color);
 }
 
-void r_draw_text(const char *text, mu_Vec2 pos, mu_Color color) {
-    mu_Rect dst = {pos.x, pos.y, 0, 0};
-    for (const char *p = text; *p; p++) {
-        if ((*p & 0xc0) == 0x80) continue;
-        int chr = mu_min((unsigned char)*p, 127);
-        mu_Rect src = atlas[ATLAS_FONT + chr];
-        dst.w = src.w;
-        dst.h = src.h;
-        push_quad(dst, src, color);
-        dst.x += dst.w;
+
+void r_load_font(mu_Font *font, const char* path, unsigned char size) {
+    *font = TTF_OpenFont(path, size);
+    assert(font && "Failed to load font");
+
+}
+
+static void push_raw_quad(mu_Rect dst, float uv[8], mu_Color color) {
+    if (buf_idx == BUFFER_SIZE) flush();
+
+    int vi = buf_idx * 4;
+    int ii = buf_idx * 6;
+
+    // Vertices (counter-clockwise)
+    vertices[vi + 0] = (Vertex){{dst.x,          dst.y         }, {uv[0], uv[1]}, {color.r, color.g, color.b, color.a}};
+    vertices[vi + 1] = (Vertex){{dst.x + dst.w,  dst.y         }, {uv[2], uv[3]}, {color.r, color.g, color.b, color.a}};
+    vertices[vi + 2] = (Vertex){{dst.x + dst.w,  dst.y + dst.h }, {uv[4], uv[5]}, {color.r, color.g, color.b, color.a}};
+    vertices[vi + 3] = (Vertex){{dst.x,          dst.y + dst.h }, {uv[6], uv[7]}, {color.r, color.g, color.b, color.a}};
+
+    // Indices (two triangles)
+    GLushort base = buf_idx * 4;
+    indices[ii + 0] = base + 0;
+    indices[ii + 1] = base + 1;
+    indices[ii + 2] = base + 2;
+    indices[ii + 3] = base + 0;
+    indices[ii + 4] = base + 2;
+    indices[ii + 5] = base + 3;
+
+    buf_idx++;
+
+}
+
+
+void r_draw_text(const char *text,mu_Font font, mu_Vec2 pos, mu_Color color) {
+    if (font) {
+        flush(); // render any pending quads first
+        // Render SDL_TTF surface
+        SDL_Color sdl_color = { color.r, color.g, color.b, color.a };
+        SDL_Surface *surface = TTF_RenderUTF8_Blended(*(TTF_Font **)font, text, sdl_color);
+        if (!surface) return;
+
+        // Ensure RGBA32 format
+        SDL_Surface *rgba_surface = SDL_ConvertSurfaceFormat(surface, SDL_PIXELFORMAT_RGBA32, 0);
+        SDL_FreeSurface(surface);
+        if (!rgba_surface) return;
+
+        // Create texture for this text
+        GLuint texid;
+        glGenTextures(1, &texid);
+        glBindTexture(GL_TEXTURE_2D, texid);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
+                    rgba_surface->w, rgba_surface->h,
+                    0, GL_RGBA, GL_UNSIGNED_BYTE, rgba_surface->pixels);
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+        // UVs (flip vertically because SDL surfaces are top-left origin)
+        float uv[8] = {
+            0.0f, 0.0f,    // bottom-left
+            1.0f, 0.0f,   // bottom-right
+            1.0f, 1.0f,   // top-right
+            0.0f, 1.0f   // top-left
+
+
+        };
+
+        // Destination rectangle
+        mu_Rect dst = { pos.x, pos.y, rgba_surface->w, rgba_surface->h };
+
+        // Push quad into vertices[] (used by flush)
+        push_raw_quad(dst, uv, color);
+
+        // Bind the texture BEFORE flush
+        glBindTexture(GL_TEXTURE_2D, texid);
+
+        // Flush the quad immediately
+        textflush();
+
+        // Cleanup
+        SDL_FreeSurface(rgba_surface);
+        glDeleteTextures(1, &texid);
+    } else {
+        mu_Rect dst = {pos.x, pos.y, 0, 0};
+        for (const char *p = text; *p; p++) {
+            if ((*p & 0xc0) == 0x80) continue;
+            int chr = mu_min((unsigned char)*p, 127);
+            mu_Rect src = atlas[ATLAS_FONT + chr];
+            dst.w = src.w;
+            dst.h = src.h;
+            push_quad(dst, src, color);
+            dst.x += dst.w;
+        }
     }
 }
 
@@ -228,18 +348,37 @@ void r_draw_icon(int id, mu_Rect rect, mu_Color color) {
     push_quad(mu_rect(x, y, src.w, src.h), src, color);
 }
 
-int r_get_text_width(const char *text, int len) {
-    int res = 0;
-    for (const char *p = text; *p && len--; p++) {
-        if ((*p & 0xc0) == 0x80) continue;
-        int chr = mu_min((unsigned char)*p, 127);
-        res += atlas[ATLAS_FONT + chr].w;
+int r_get_text_width(mu_Font font,const char *text, int len) {
+    if (!font) {
+        int res = 0;
+        for (const char *p = text; *p && len--; p++) {
+            if ((*p & 0xc0) == 0x80) continue;
+            int chr = mu_min((unsigned char)*p, 127);
+            res += atlas[ATLAS_FONT + chr].w;
+        }
+        return res;
+    } else {
+            // Create null-terminated string from the given length
+        char *chars = (char *)calloc(len + 1, 1);
+        memcpy(chars, text, len);
+        
+        int width = 0;
+        int height = 0;
+        if (TTF_SizeUTF8(*(TTF_Font**)font, chars, &width, &height) < 0) {
+            free(chars);
+            return 0;
+        } else {
+        }
+        
+        free(chars);
+        return width;
     }
-    return res;
+    
 }
 
-int r_get_text_height(void) {
-    return 18;
+int r_get_text_height(mu_Font font) {
+    if (!font) return 18; // fallback
+    return TTF_FontHeight(*(TTF_Font**)font);
 }
 
 void r_set_clip_rect(mu_Rect rect) {

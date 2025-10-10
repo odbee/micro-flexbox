@@ -41,8 +41,23 @@ static mu_Style newstyle = {
 
 
 static void layout(mu_Context *ctx) {
-  
+      mu_adjust_style(ctx,
+      (mu_StyleOverride){
+          .set_flags = MU_STYLE_BORDER_SIZE | MU_STYLE_PADDING| MU_STYLE_GAP,
+          .border_size=1,
+          .gap = 0,
+          .padding = 0,
+  });
   if (mu_begin_elem_window_ex(ctx,"MAIN LAYOUT",mu_rect(0,0,width,height))){
+        mu_pop_style(ctx);
+
+      mu_adjust_style(ctx,
+        (mu_StyleOverride){
+            .set_flags = MU_STYLE_BORDER_SIZE | MU_STYLE_PADDING| MU_STYLE_GAP,
+            .border_size=0,
+            .gap = 5,
+            .padding = 5,
+    });
     mu_begin_elem(ctx,0,30);
       mu_begin_elem_ex(ctx,-1,1,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),0);
         mu_add_text_to_elem(ctx,"REC");
@@ -54,20 +69,31 @@ static void layout(mu_Context *ctx) {
       mu_end_elem(ctx);
       mu_begin_elem_ex(ctx,0,0,DIR_Y,0,0);
       mu_end_elem(ctx);
-      mu_begin_elem_ex(ctx,50,1,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),0);
+      mu_begin_elem_ex(ctx,-1,1,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),0);
         mu_add_text_to_elem(ctx,"Battery 67%");
       mu_end_elem(ctx);
       
     mu_end_elem(ctx);
+    mu_pop_style(ctx);
+      mu_adjust_style(ctx,
+        (mu_StyleOverride){
+            .set_flags = MU_STYLE_BORDER_SIZE | MU_STYLE_PADDING| MU_STYLE_GAP,
+            .border_size=1,
+            .gap = 0,
+            .padding = 0,
+    });
     mu_begin_elem_ex(ctx,1,0,DIR_X,(MU_ALIGN_BOTTOM|MU_ALIGN_LEFT),0);
+    mu_pop_style(ctx);
+
       mu_adjust_style(ctx,
           (mu_StyleOverride){
-              .set_flags =    MU_STYLE_GAP,
+              .set_flags =    MU_STYLE_GAP| MU_STYLE_PADDING,
 
-              .gap = 15,
+              .gap = 10,
+              .padding = 10,
 
       });
-      mu_begin_elem_ex(ctx,90,1,DIR_Y,(MU_ALIGN_MIDDLE|MU_ALIGN_CENTER),0);
+      mu_begin_elem_ex(ctx,120,1,DIR_Y,(MU_ALIGN_MIDDLE|MU_ALIGN_CENTER),0);
       mu_pop_style(ctx);
       const char* iso_entries[] = {"100", "200", "300", "400"};
         mu_scroller(ctx,"ISO",iso_entries,4);
@@ -84,25 +110,40 @@ static void layout(mu_Context *ctx) {
       mu_begin_elem_ex(ctx,0,0,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),0);
       mu_end_elem(ctx); 
 
-      mu_begin_elem_ex(ctx,90,1,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_CENTER),0);
+      mu_adjust_style(ctx,
+        (mu_StyleOverride){
+            .set_flags = MU_STYLE_BORDER_SIZE | MU_STYLE_PADDING| MU_STYLE_GAP,
+            .border_size=1,
+            .gap = 10,
+            .padding = 10,
+    });
+      mu_begin_elem_ex(ctx,120,1,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_CENTER),0);
+    mu_pop_style(ctx);
 
-        mu_begin_elem_ex(ctx,1,30,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),MU_EL_CLICKABLE|MU_EL_STUTTER);
+        mu_begin_elem_ex(ctx,1,60,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),MU_EL_CLICKABLE|MU_EL_STUTTER);
         mu_add_text_to_elem(ctx,"RESOLUTION");
         mu_end_elem(ctx); 
 
-        mu_begin_elem_ex(ctx,1,30,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),MU_EL_CLICKABLE|MU_EL_STUTTER);
+        mu_begin_elem_ex(ctx,1,60,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),MU_EL_CLICKABLE|MU_EL_STUTTER);
         mu_add_text_to_elem(ctx,"FRAMERATE");
         mu_end_elem(ctx); 
 
-        mu_begin_elem_ex(ctx,1,30,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),MU_EL_CLICKABLE|MU_EL_STUTTER);
+        mu_begin_elem_ex(ctx,1,60,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),MU_EL_CLICKABLE|MU_EL_STUTTER);
         mu_add_text_to_elem(ctx,"TOOLS");
         mu_end_elem(ctx); 
+        mu_adjust_style(ctx,
+          (mu_StyleOverride){
+              .set_flags = MU_STYLE_BORDER_SIZE,
+              .border_size=0,
 
+      });
+      
         mu_begin_elem_ex(ctx,1,0,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),MU_EL_CLICKABLE|MU_EL_STUTTER);
+    mu_pop_style(ctx);
 
         mu_end_elem(ctx); 
 
-        mu_begin_elem_ex(ctx,1,30,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),MU_EL_CLICKABLE|MU_EL_STUTTER);
+        mu_begin_elem_ex(ctx,1,60,DIR_Y,(MU_ALIGN_TOP|MU_ALIGN_LEFT),MU_EL_CLICKABLE|MU_EL_STUTTER);
         mu_add_text_to_elem(ctx,"SETTINGS");
         mu_end_elem(ctx); 
       mu_end_elem(ctx); 
@@ -157,9 +198,20 @@ int main (int argc, char *argv[]) {
     (void)argc; 
     (void)argv; 
 
-    SDL_Init(SDL_INIT_EVERYTHING);
+    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
+      printf("SDL_Init Error: %s\n", SDL_GetError());
+      return 1;
+    }
+    
+    int numDrivers = SDL_GetNumVideoDrivers();
+    printf("Compiled-in SDL Video Drivers (%d):\n", numDrivers);
+    for (int i = 0; i < numDrivers; i++) {
+        printf("  %d: %s\n", i, SDL_GetVideoDriver(i));
+    }
+    const char* render_driver = SDL_GetCurrentVideoDriver();
+    printf("SDL Video Driver: %s\n", render_driver);
     r_init();
-    r_load_font(&q_font, "C:/Users/ed/Documents/camera/camera microui/assets/fonts/ZCOOL_QingKe_HuangYou/ZCOOLQingKeHuangYou-Regular.ttf", 16);
+    r_load_font(&q_font, "/home/cinepi/micro-flexbox/assets/fonts/ZCOOL_QingKe_HuangYou/ZCOOLQingKeHuangYou-Regular.ttf", 20);
       /* init microui */
     mu_Context *ctx =(mu_Context*) malloc(sizeof(mu_Context));
     mu_init(ctx);
@@ -184,6 +236,18 @@ int main (int argc, char *argv[]) {
             case SDL_MOUSEMOTION: mu_input_mousemove(ctx, e.motion.x, e.motion.y); break;
             case SDL_MOUSEWHEEL: mu_input_scroll(ctx, 0, e.wheel.y * -30); break;
             case SDL_TEXTINPUT: mu_input_text(ctx, e.text.text); break;
+
+            case SDL_FINGERMOTION:
+                mu_input_fingermove(ctx, e.tfinger.x*width, e.tfinger.y*height);
+                // printf("Fingermove: id=%lld, touchId=%lld, x=%f, y=%f, pressure=%f\n",(long long)e.tfinger.fingerId,(long long)e.tfinger.touchId,e.tfinger.x, e.tfinger.y,e.tfinger.pressure);
+                break;
+
+            case SDL_FINGERDOWN:
+            case SDL_FINGERUP: {
+            if (e.type == SDL_FINGERDOWN) { mu_input_fingerdown(ctx, e.tfinger.x*width, e.tfinger.y*height); }
+            if (e.type ==   SDL_FINGERUP) { mu_input_fingerup  (ctx, e.tfinger.x*width, e.tfinger.y*height); }
+            break;
+            }
 
             case SDL_MOUSEBUTTONDOWN:
             case SDL_MOUSEBUTTONUP: {

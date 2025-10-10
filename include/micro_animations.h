@@ -66,8 +66,8 @@ void snaptoclosestchild(mu_Context *ctx, mu_Elem* elem) {
 void drag(mu_Context *ctx, mu_Elem* elem) {
       mu_StyleOverride anim;
       int mov=0;
-      if (ctx->mouse_down== MU_MOUSE_LEFT){
-        mov=elem->anim_override->scroll.y+ctx->mouse_delta.y;
+      if (ctx->mouse_down== MU_MOUSE_LEFT|| ctx->finger_down) {
+        mov=elem->anim_override->scroll.y+ctx->mouse_delta.y+ctx->finger_delta.y;
 
         // printf("motion\n");
 

@@ -388,6 +388,14 @@ struct mu_Context {
 
   
   /* input state */
+
+  mu_Vec2 finger_pos;
+  mu_Vec2 last_finger_pos;
+  mu_Vec2 finger_delta;
+  int finger_down;
+  int finger_pressed;
+  int num_fingers;
+
   mu_Vec2 mouse_pos;
   mu_Vec2 last_mouse_pos;
   mu_Vec2 mouse_delta;
@@ -482,6 +490,11 @@ void mu_end_treenode(mu_Context *ctx);
 void mu_begin_panel_ex(mu_Context *ctx, const char *name, int opt);
 void mu_end_panel(mu_Context *ctx);
 void mu_layout_row(mu_Context *ctx, int items, const int *widths, int height);
+
+
+void mu_input_fingermove(mu_Context *ctx, int x, int y);
+void mu_input_fingerdown(mu_Context *ctx, int x, int y);
+void mu_input_fingerup(mu_Context *ctx, int x, int y);
 
 
 
